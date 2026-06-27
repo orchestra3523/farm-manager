@@ -527,19 +527,25 @@ const SUPA_URL = 'https://vsuarwjztpeuvekqeobw.supabase.co';
 const SUPA_KEY = 'sb_publishable_b_MvugfzI_w917SUyh49YA_RsUgJN5s';
 
 async function supaFetch(path, options={}){
-  const res = await fetch(SUPA_URL + '/rest/v1/' + path, {
-    ...options,
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': 'Bearer ' + SUPA_KEY,
-      'Content-Type': 'application/json',
-      'Prefer': options.prefer || '',
-      ...(options.headers||{})
-    }
-  });
+  const headers = {
+    'apikey': SUPA_KEY,
+    'Authorization': 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json',
+  };
+  if(options.prefer) headers['Prefer'] = options.prefer;
+  if(options.headers) Object.assign(headers, options.headers);
+  
+  const fetchOptions = {
+    method: options.method || 'GET',
+    headers: headers,
+  };
+  if(options.body) fetchOptions.body = options.body;
+  
+  const res = await fetch(SUPA_URL + '/rest/v1/' + path, fetchOptions);
   if(!res.ok){
     const err = await res.text();
-    throw new Error(err);
+    console.error('Supabase error:', res.status, err);
+    throw new Error('DB保存エラー(' + res.status + '): ' + err);
   }
   const text = await res.text();
   return text ? JSON.parse(text) : null;
@@ -648,20 +654,30 @@ async function loadFromDB(){
 
 async function saveToDBNew(field){
   const row = fieldToRow(field);
+  // idカラムは自動生成なので送らない
+  delete row.id;
   const res = await supaFetch('fields?select=id', {
     method: 'POST',
     prefer: 'return=representation',
+    headers: {'Prefer': 'return=representation'},
     body: JSON.stringify(row)
   });
-  if(res && res[0]) field.id = res[0].id;
+  if(res && res[0]) field.id = res[0].id; // DBの正式IDを取得
   return field;
 }
 
 async function saveToDB(field){
+  // field.idが数値（DB id）かチェック
+  const dbId = parseInt(field.id);
+  if(!dbId || dbId > 9999999999999){ // タイムスタンプ（13桁）はDB idではない
+    // DB idがない場合は新規作成
+    return saveToDBNew(field);
+  }
   const row = fieldToRow(field);
-  await supaFetch('fields?id=eq.' + field.id, {
+  delete row.id;
+  await supaFetch('fields?id=eq.' + dbId, {
     method: 'PATCH',
-    prefer: 'return=minimal',
+    headers: {'Prefer': 'return=minimal'},
     body: JSON.stringify(row)
   });
 }
@@ -1129,14 +1145,22 @@ function saveField(){
   if(editingId){
     const i=fields.findIndex(f=>f.id===editingId);
     if(i>=0)fields[i]={...fields[i],...d};
+    const savedField=fields.find(f=>f.id===editingId);
     closeModal(); rerender();
-    saveToDB(fields.find(f=>f.id===editingId)).then(()=>showToast('✓ 保存しました')).catch(e=>showToast('⚠ 保存失敗: '+e.message));
+    saveToDB(savedField)
+      .then(()=>{ showToast('✓ 保存しました'); loadFromDB(); })
+      .catch(e=>{ showToast('⚠ 保存失敗: '+e.message); console.error('saveToDB error:',e); });
   } else {
     if(pendingLatLngs)d.latlngs=pendingLatLngs;
     d.id=Date.now();
-    fields.push(d); selId=d.id;
+    fields.push(d);
     closeModal(); rerender();
-    saveToDBNew(d).then(()=>showToast('✓ 圃場を登録しました')).catch(e=>showToast('⚠ 保存失敗: '+e.message));
+    saveToDBNew(d)
+      .then(()=>{ showToast('✓ 圃場を登録しました'); loadFromDB(); })
+      .catch(e=>{
+        showToast('⚠ 保存失敗: '+e.message);
+        console.error('saveToDBNew error:', e);
+      });
   }
 }
 function deleteField(){
@@ -1326,15 +1350,19 @@ async function importKML(e){
       // KMLデータをDBに一括保存
       showToast('☁️ データベースに保存中…');
       rerender();
+      // DBに保存してから正しいIDで再読み込み
       Promise.all(fields.map(f=>saveToDBNew(f).catch(e=>console.error('save error',e))))
-        .then(()=>{ rerender(); });
+        .then(()=>{
+          const msg=skipped>0
+            ? ('✓ '+imported+'筆インポート完了！（座標なし '+skipped+'筆はスキップ）')
+            : ('✓ '+imported+'筆インポート完了！');
+          showToast(msg);
+          // DBから再読み込みして正しいIDを取得
+          return loadFromDB();
+        });
       // 全圃場が見えるようズーム
       const allPts=fields.flatMap(function(f){return(f.latlngs||[]).map(function(p){return[p.lat,p.lng];});});
       if(allPts.length) map.fitBounds(L.latLngBounds(allPts),{padding:[30,30]});
-      const msg=skipped>0
-        ? ('✓ '+imported+'筆インポート完了！（座標なし '+skipped+'筆はスキップ）')
-        : ('✓ '+imported+'筆インポート完了！');
-      showToast(msg);
     }catch(err){
       console.error('KML import error:', err);
       showToast('⚠ 読込エラー: '+err.message);
