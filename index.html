@@ -348,6 +348,10 @@ textarea{resize:vertical;min-height:56px}
             <div class="fg"><label>圃場名 *</label><input type="text" id="f-name" placeholder="例: 北の田A"></div>
             <div class="fg"><label>地番</label><input type="text" id="f-lot" placeholder="例: 萱橋 123-4"></div>
           </div>
+          <div class="frow c2">
+            <div class="fg"><label>eMAFF面積（a）<span style="font-size:10px;color:var(--gl);margin-left:4px">← 優先して使用</span></label><input type="number" id="f-emaff-area" placeholder="例: 25.6" step="0.01"></div>
+            <div class="fg"><label>描画面積（自動計算）</label><div id="area-disp" class="area-disp" style="margin-bottom:0;font-size:12px;padding:6px 8px">—</div></div>
+          </div>
           <div class="frow c3">
             <div class="fg"><label>担当者</label><input type="text" id="f-owner" placeholder="例: 田中"></div>
             <div class="fg"><label>品種</label><input type="text" id="f-variety" placeholder="例: コシヒカリ"></div>
@@ -579,6 +583,7 @@ function rowToField(r){
     oIntention: r.o_intention||'',
     oGift: r.o_gift||'',
     oGiftYears: r.o_gift_years||[],
+    emaffArea: r.emaff_area||'',
     customColor: r.custom_color||null,
   };
 }
@@ -620,6 +625,7 @@ function fieldToRow(f){
     o_intention: f.oIntention||null,
     o_gift: f.oGift||null,
     o_gift_years: f.oGiftYears||[],
+    emaff_area: f.emaffArea||null,
     custom_color: f.customColor||null,
     updated_at: new Date().toISOString(),
   };
@@ -759,7 +765,8 @@ function confirmDraw(){
   editingId=null; pendingPhotos=[]; rentMethod=''; giftYears=[];
   clearForm();
   const a=(calcArea(pendingLatLngs)/100).toFixed(1);
-  document.getElementById('area-disp').textContent=`面積: ${a} a（${(a/100).toFixed(4)} ha）`;
+  document.getElementById('area-disp').textContent=a+' a（描画・概算）';
+  document.getElementById('f-emaff-area').value='';
   document.getElementById('mbtn-del').style.display='none';
   switchMTab('field');
   document.getElementById('overlay').classList.remove('hide');
@@ -837,7 +844,7 @@ function buildPopup(f){
   }).join('');
   return `
     <div class="pop-name">${f.name}</div>
-    <div class="pop-row">面積: <strong>${aA} a</strong>${f.lot?` | 地番: <strong>${f.lot}</strong>`:''}</div>
+    <div class="pop-row">面積: <strong>${f.emaffArea?f.emaffArea+' a <span style="font-size:10px;color:#6A9B8A">eMAFF</span>':aA+' a <span style="font-size:10px;color:#aaa">概算</span>'}</strong>${f.lot?` | 地番: <strong>${f.lot}</strong>`:''}</div>
     ${f.variety?`<div class="pop-row">品種: <strong>${f.variety}</strong></div>`:''}
     ${f.oName?`<div class="pop-row">地主: <strong>${f.oName}</strong>${f.oTel1?' | '+f.oTel1:''}</div>`:''}
     <div style="margin:7px 0 4px">
@@ -928,7 +935,7 @@ function renderSide(){
       <div class="fc-top">
         <div><div class="fc-name">${f.name}</div><div class="fc-lot">${f.lot||'地番未登録'}</div></div>
         <div style="text-align:right">
-          <div class="fc-area">${aA}a</div>
+          <div class="fc-area">${f.emaffArea?f.emaffArea+'a':aA+'a'}${f.emaffArea?'<span style="font-size:8px;opacity:.7"> eMAFF</span>':''}</div>
           <div style="margin-top:3px;display:flex;align-items:center;gap:3px;justify-content:flex-end">
             <span class="sdot" style="background:${sc2[f.status]}"></span>
             <span style="font-size:9px;color:${sc2[f.status]}">${SL[f.status]}</span>
@@ -979,7 +986,7 @@ function renderTable(){
     const ckHtml=(v,label)=>`<span style="font-size:10px;padding:1px 5px;border-radius:10px;${v?'background:rgba(44,74,62,.1);color:#2C4A3E':'color:#ccc'}">${v?'✓':'○'} ${label}</span>`;
     return `<tr class="${selId===f.id?'sel':''}" onclick="focusField(${f.id})">
       <td class="tname">${f.name}</td>
-      <td>${aA}</td>
+      <td>${f.emaffArea?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
       <td style="color:var(--su);font-size:10px">${f.lot||'—'}</td>
       <td>${f.variety||'—'}</td>
       <td>${f.plantDate?fmt(f.plantDate):'—'}</td>
@@ -1015,7 +1022,8 @@ function openEdit(id){
   document.getElementById('f-fert').value=f.fertDate||'';
   document.getElementById('f-memo').value=f.memo||'';
   const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
-  document.getElementById('area-disp').textContent=`面積: ${aA} a`;
+  document.getElementById('area-disp').textContent=aA+' a（描画）';
+  document.getElementById('f-emaff-area').value=f.emaffArea||'';
   // owner tab
   document.getElementById('ck-paid').checked=!!f.ckPaid;
   document.getElementById('ck-cont').checked=!!f.ckCont;
@@ -1046,7 +1054,7 @@ function closeModal(){
   editingId=null; pendingLatLngs=null; pendingPhotos=[];
 }
 function clearForm(){
-  ['f-name','f-lot','f-owner','f-variety','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo',
+  ['f-name','f-lot','f-owner','f-variety','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo','f-emaff-area',
    'o-name','o-kana','o-tel1','o-tel2','o-addr','o-rel','o-rent','o-renttime','o-rentmemo',
    'o-cstart','o-cend','o-crenew','o-intention','o-gift'].forEach(id=>{
     const el=document.getElementById(id); if(el)el.value='';
@@ -1103,6 +1111,7 @@ function saveField(){
   if(!name){showToast('⚠ 圃場名を入力してください');return}
   const d={
     name, lot:v('f-lot'), owner:v('f-owner'), variety:v('f-variety'),
+    emaffArea:v('f-emaff-area'),
     status:document.getElementById('f-status').value,
     seedDate:v('f-seed'), plantDate:v('f-plant'), harvestDate:v('f-harvest'),
     herbDate:v('f-herb'), fertDate:v('f-fert'), memo:v('f-memo'), photos:pendingPhotos,
@@ -1183,7 +1192,11 @@ function setF(val,el){
 }
 function updateStats(){
   document.getElementById('sn-count').textContent=fields.length;
-  const tot=fields.reduce((s,f)=>s+(f.latlngs?calcArea(f.latlngs):(parseFloat(f.area)||0)*100),0);
+  // eMAFF面積があればそちらを優先、なければポリゴン計算値を使用
+  const tot=fields.reduce((s,f)=>{
+    if(f.emaffArea&&parseFloat(f.emaffArea)>0) return s+(parseFloat(f.emaffArea)*100); // a→m2
+    return s+(f.latlngs?calcArea(f.latlngs):0);
+  },0);
   document.getElementById('sn-area').textContent=(tot/10000).toFixed(2);
   document.getElementById('sn-planted').textContent=fields.filter(f=>f.status==='planted').length;
   document.getElementById('sn-harvested').textContent=fields.filter(f=>f.status==='harvested').length;
