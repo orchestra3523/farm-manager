@@ -631,7 +631,6 @@ function fieldToRow(f){
     o_intention: f.oIntention||null,
     o_gift: f.oGift||null,
     o_gift_years: f.oGiftYears||[],
-    emaff_area: f.emaffArea||null,
     custom_color: f.customColor||null,
     updated_at: new Date().toISOString(),
   };
@@ -654,30 +653,33 @@ async function loadFromDB(){
 
 async function saveToDBNew(field){
   const row = fieldToRow(field);
-  // idカラムは自動生成なので送らない
   delete row.id;
+  if(field.emaffArea!==undefined && field.emaffArea!==null && field.emaffArea!==''){
+    row.emaff_area = parseFloat(field.emaffArea)||null;
+  }
   const res = await supaFetch('fields?select=id', {
     method: 'POST',
     prefer: 'return=representation',
-    headers: {'Prefer': 'return=representation'},
     body: JSON.stringify(row)
   });
-  if(res && res[0]) field.id = res[0].id; // DBの正式IDを取得
+  if(res && res[0]) field.id = res[0].id;
   return field;
 }
 
 async function saveToDB(field){
-  // field.idが数値（DB id）かチェック
   const dbId = parseInt(field.id);
-  if(!dbId || dbId > 9999999999999){ // タイムスタンプ（13桁）はDB idではない
-    // DB idがない場合は新規作成
+  if(!dbId || dbId > 9999999999999){
     return saveToDBNew(field);
   }
   const row = fieldToRow(field);
   delete row.id;
+  // emaff_areaを別途追加（列が存在する場合のみ）
+  if(field.emaffArea!==undefined && field.emaffArea!==null && field.emaffArea!==''){
+    row.emaff_area = parseFloat(field.emaffArea)||null;
+  }
   await supaFetch('fields?id=eq.' + dbId, {
     method: 'PATCH',
-    headers: {'Prefer': 'return=minimal'},
+    prefer: 'return=minimal',
     body: JSON.stringify(row)
   });
 }
