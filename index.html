@@ -1027,6 +1027,9 @@ function sortBy(k){sortKey===k?sortDir*=-1:(sortKey=k,sortDir=1);renderTable()}
 // ============================================================
 function openEdit(id){
   const f=fields.find(x=>x.id===id); if(!f)return;
+  // モーダルを開く前に地図の位置を保存
+  window._savedMapCenter = map.getCenter();
+  window._savedMapZoom = map.getZoom();
   editingId=id; pendingLatLngs=null; pendingPhotos=f.photos?[...f.photos]:[];
   rentMethod=f.oRentMethod||''; giftYears=f.oGiftYears?[...f.oGiftYears]:[];
   // field tab
@@ -1072,6 +1075,12 @@ function openEdit(id){
 function closeModal(){
   document.getElementById('overlay').classList.add('hide');
   editingId=null; pendingLatLngs=null; pendingPhotos=[];
+  // モーダルを閉じた後に地図の位置を復元
+  if(window._savedMapCenter && window._savedMapZoom){
+    setTimeout(()=>{
+      map.setView(window._savedMapCenter, window._savedMapZoom, {animate:false});
+    }, 50);
+  }
 }
 function clearForm(){
   ['f-name','f-lot','f-owner','f-variety','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo','f-emaff-area',
