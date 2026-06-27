@@ -636,15 +636,17 @@ function fieldToRow(f){
   };
 }
 
-async function loadFromDB(){
+async function loadFromDB(resetMapView=false){
   try{
-    showToast('☁️ データを読み込み中…');
+    if(resetMapView) showToast('☁️ データを読み込み中…');
     const rows = await supaFetch('fields?select=*&order=id.asc');
     fields = (rows||[]).map(rowToField);
     rerender();
-    const allPts = fields.flatMap(f=>(f.latlngs||[]).map(p=>[p.lat,p.lng]));
-    if(allPts.length) map.fitBounds(L.latLngBounds(allPts),{padding:[30,30]});
-    showToast('✓ ' + fields.length + '筆 読み込みました');
+    if(resetMapView){
+      const allPts = fields.flatMap(f=>(f.latlngs||[]).map(p=>[p.lat,p.lng]));
+      if(allPts.length) map.fitBounds(L.latLngBounds(allPts),{padding:[30,30]});
+      showToast('✓ ' + fields.length + '筆 読み込みました');
+    }
   }catch(e){
     showToast('⚠ 読込エラー: ' + e.message);
     console.error(e);
@@ -1360,7 +1362,7 @@ async function importKML(e){
             : ('✓ '+imported+'筆インポート完了！');
           showToast(msg);
           // DBから再読み込みして正しいIDを取得
-          return loadFromDB();
+          return loadFromDB(true);
         });
       // 全圃場が見えるようズーム
       const allPts=fields.flatMap(function(f){return(f.latlngs||[]).map(function(p){return[p.lat,p.lng];});});
@@ -1422,8 +1424,8 @@ function showToast(msg){const t=document.getElementById('toast');t.textContent=m
 
 
 window.addEventListener('load',()=>{
-  // Supabaseからデータ読み込み
-  loadFromDB();
+  // Supabaseからデータ読み込み（初回のみ地図リセット）
+  loadFromDB(true);
 });
 window.addEventListener('resize',()=>map.invalidateSize());
 </script>
