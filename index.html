@@ -990,6 +990,19 @@ function focusField(id){
 // ============================================================
 //  LIST TABLE
 // ============================================================
+// 圃場名の先頭の地名を取得（スペース・数字・記号の前まで）
+function getAreaName(f){
+  const name = f.name || '';
+  // 地番の先頭地名を優先（例: "萱橋 123-1" → "萱橋"）
+  if(f.lot){
+    const lotArea = f.lot.trim().split(/[\s　]/)[0];
+    if(lotArea) return lotArea;
+  }
+  // 圃場名の先頭地名（例: "岩崎 自治会館 8a" → "岩崎"）
+  const m = name.match(/^([^\s　0-9０-９a-zA-Zａ-ｚ\-－]+)/);
+  return m ? m[1] : 'その他';
+}
+
 function renderTable(){
   let data=getFiltered();
   if(sortKey){
@@ -999,12 +1012,46 @@ function renderTable(){
       return va<vb?-sortDir:va>vb?sortDir:0;
     });
   }
+  // ソートキーがない場合は地域順に並べる
+  if(!sortKey){
+    data=[...data].sort((a,b)=>{
+      const ra=getAreaName(a), rb=getAreaName(b);
+      return ra<rb?-1:ra>rb?1:0;
+    });
+  }
   document.getElementById('lcount').textContent=data.length+'筆';
   const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882'};
-  document.getElementById('ltbody').innerHTML=data.length?data.map(f=>{
-    const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
+  if(!data.length){
+    document.getElementById('ltbody').innerHTML='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
+    return;
+  }
+  // 地域グループ別にヘッダー行を挿入
+  let html='', lastArea='';
+  let groupCount=0, groupArea=0;
+  data.forEach(f=>{
+    const area=getAreaName(f);
+    if(area!==lastArea){
+      // グループ集計行を閉じる
+      if(lastArea){
+        html+=`<tr style="background:rgba(44,74,62,.04)">
+          <td colspan="2" style="padding:4px 12px;font-size:10px;color:var(--su);text-align:right">${groupCount}筆 / ${groupArea.toFixed(2)}ha</td>
+          <td colspan="10"></td>
+        </tr>`;
+      }
+      groupCount=0; groupArea=0;
+      html+=`<tr>
+        <td colspan="12" style="background:var(--g-deep,#2C4A3E);color:#fff;padding:7px 12px;font-size:12px;font-weight:700;letter-spacing:.05em;position:sticky;top:32px">
+          📍 ${area}
+        </td>
+      </tr>`;
+      lastArea=area;
+    }
+    const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'0');
+    const dispArea=f.emaffArea?parseFloat(f.emaffArea):parseFloat(aA)||0;
+    groupCount++;
+    groupArea+=dispArea/100;
     const ckHtml=(v,label)=>`<span style="font-size:10px;padding:1px 5px;border-radius:10px;${v?'background:rgba(44,74,62,.1);color:#2C4A3E':'color:#ccc'}">${v?'✓':'○'} ${label}</span>`;
-    return `<tr class="${selId===f.id?'sel':''}" onclick="focusField(${f.id})">
+    html+=`<tr class="${selId===f.id?'sel':''}" onclick="focusField(${f.id})">
       <td class="tname">${f.name}</td>
       <td>${f.emaffArea?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
       <td style="color:var(--su);font-size:10px">${f.lot||'—'}</td>
@@ -1018,7 +1065,15 @@ function renderTable(){
       <td><span style="background:${sc2[f.status]}22;color:${sc2[f.status]};padding:2px 6px;border-radius:4px;font-size:10px">${SL[f.status]}</span></td>
       <td><button onclick="event.stopPropagation();openEdit(${f.id})" style="padding:3px 8px;border-radius:5px;border:1px solid var(--cd);background:var(--cr);font-size:10px;cursor:pointer;font-family:inherit">編集</button></td>
     </tr>`;
-  }).join(''):'<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
+  });
+  // 最後のグループ集計
+  if(lastArea){
+    html+=`<tr style="background:rgba(44,74,62,.04)">
+      <td colspan="2" style="padding:4px 12px;font-size:10px;color:var(--su);text-align:right">${groupCount}筆 / ${groupArea.toFixed(2)}ha</td>
+      <td colspan="10"></td>
+    </tr>`;
+  }
+  document.getElementById('ltbody').innerHTML=html;
 }
 function sortBy(k){sortKey===k?sortDir*=-1:(sortKey=k,sortDir=1);renderTable()}
 
