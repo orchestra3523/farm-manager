@@ -311,13 +311,13 @@ textarea{resize:vertical;min-height:56px}
         <th onclick="sortBy('name')">圃場名</th>
         <th onclick="sortBy('area')">面積(a)</th>
         <th>地番</th>
+        <th onclick="sortBy('district')">地区名</th>
         <th>品種</th>
         <th onclick="sortBy('plantDate')">田植え日</th>
         <th onclick="sortBy('harvestDate')">収穫日</th>
         <th>担当</th>
-        <th>地主</th>
-        <th>賃料</th>
-        <th>継続</th>
+        <th>地主名</th>
+        <th>電話</th>
         <th>状況</th>
         <th></th>
       </tr></thead>
@@ -347,6 +347,10 @@ textarea{resize:vertical;min-height:56px}
           <div class="frow c2">
             <div class="fg"><label>圃場名 *</label><input type="text" id="f-name" placeholder="例: 北の田A"></div>
             <div class="fg"><label>地番</label><input type="text" id="f-lot" placeholder="例: 萱橋 123-4"></div>
+          </div>
+          <div class="frow c2">
+            <div class="fg"><label>地区名 <span style="font-size:10px;color:var(--gl)">← 一覧のグループ分けに使用</span></label><input type="text" id="f-district" placeholder="例: 萱橋エリア、岩崎エリア"></div>
+            <div class="fg"><label>地番</label><input type="text" id="f-lot2" style="display:none"></div>
           </div>
           <div class="frow c2">
             <div class="fg"><label>eMAFF面積（a）<span style="font-size:10px;color:var(--gl);margin-left:4px">← 優先して使用</span></label><input type="number" id="f-emaff-area" placeholder="例: 25.6" step="0.01"></div>
@@ -590,6 +594,7 @@ function rowToField(r){
     oGift: r.o_gift||'',
     oGiftYears: r.o_gift_years||[],
     emaffArea: r.emaff_area||'',
+    district: r.district||'',
     customColor: r.custom_color||null,
   };
 }
@@ -631,6 +636,7 @@ function fieldToRow(f){
     o_intention: f.oIntention||null,
     o_gift: f.oGift||null,
     o_gift_years: f.oGiftYears||[],
+    district: f.district||null,
     custom_color: f.customColor||null,
     updated_at: new Date().toISOString(),
   };
@@ -990,17 +996,61 @@ function focusField(id){
 // ============================================================
 //  LIST TABLE
 // ============================================================
+// ============================================================
+//  INLINE EDIT HELPERS
+// ============================================================
+function inlineCell(id, field, val, placeholder){
+  const display = val || `<span style="color:#ccc;font-size:10px">${placeholder}</span>`;
+  return `<span class="inline-cell" onclick="event.stopPropagation();startInlineEdit(this,${id},'${field}')" title="タップして編集" style="cursor:pointer;display:block;min-width:40px;padding:2px 4px;border-radius:4px;border:1px solid transparent" onmouseover="this.style.borderColor='var(--gp)'" onmouseout="this.style.borderColor='transparent'">${display}</span>`;
+}
+function inlineDateCell(id, field, val){
+  const display = val ? fmt(val) : `<span style="color:#ccc;font-size:10px">—</span>`;
+  return `<span class="inline-cell" onclick="event.stopPropagation();startInlineDateEdit(this,${id},'${field}','${val||''}')" title="タップして編集" style="cursor:pointer;display:block;min-width:40px;padding:2px 4px;border-radius:4px;border:1px solid transparent" onmouseover="this.style.borderColor='var(--gp)'" onmouseout="this.style.borderColor='transparent'">${display}</span>`;
+}
+function startInlineEdit(el, id, field){
+  const f = fields.find(x=>x.id===id); if(!f)return;
+  const cur = f[field]||'';
+  const input = document.createElement('input');
+  input.type='text';
+  input.value=cur;
+  input.style.cssText='width:100%;padding:2px 4px;border:1px solid var(--gm);border-radius:4px;font-size:12px;font-family:inherit;background:#fff;outline:none';
+  input.onclick=e=>e.stopPropagation();
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+  const save=()=>{
+    f[field]=input.value.trim();
+    saveToDB(f).then(()=>{ renderTable(); renderSide(); updateStats(); }).catch(e=>showToast('⚠ 保存失敗'));
+  };
+  input.onblur=save;
+  input.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();save();} if(e.key==='Escape'){renderTable();} };
+}
+function startInlineDateEdit(el, id, field, cur){
+  const f = fields.find(x=>x.id===id); if(!f)return;
+  const input = document.createElement('input');
+  input.type='date';
+  input.value=cur;
+  input.style.cssText='width:100%;padding:2px 2px;border:1px solid var(--gm);border-radius:4px;font-size:11px;font-family:inherit;background:#fff;outline:none';
+  input.onclick=e=>e.stopPropagation();
+  el.replaceWith(input);
+  input.focus();
+  const save=()=>{
+    f[field]=input.value||null;
+    saveToDB(f).then(()=>{ renderTable(); renderSide(); updateStats(); }).catch(e=>showToast('⚠ 保存失敗'));
+  };
+  input.onblur=save;
+  input.onchange=save;
+  input.onkeydown=e=>{ if(e.key==='Escape'){renderTable();} };
+}
+
 // 圃場名の先頭の地名を取得（スペース・数字・記号の前まで）
 function getAreaName(f){
+  // 地区名が設定されていればそれを優先
+  if(f.district && f.district.trim()) return f.district.trim();
   const name = f.name || '';
-  // 地番の先頭地名を優先（例: "萱橋 123-1" → "萱橋"）
-  if(f.lot){
-    const lotArea = f.lot.trim().split(/[\s　]/)[0];
-    if(lotArea) return lotArea;
-  }
-  // 圃場名の先頭地名（例: "岩崎 自治会館 8a" → "岩崎"）
-  const m = name.match(/^([^\s　0-9０-９a-zA-Zａ-ｚ\-－]+)/);
-  return m ? m[1] : 'その他';
+  // 圃場名の先頭地名で自動判定（例: "岩崎 自治会館 8a" → "岩崎"）
+  const m = name.match(/^([^\s　0-9０-９a-zA-Zａ-ｚ\-－✔️☑]+)/);
+  return m ? m[1].trim() : 'その他';
 }
 
 function renderTable(){
@@ -1025,54 +1075,51 @@ function renderTable(){
     document.getElementById('ltbody').innerHTML='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
     return;
   }
-  // 地域グループ別にヘッダー行を挿入
+
+  // 先にグループ集計を計算
+  const groups={};
+  data.forEach(f=>{
+    const area=getAreaName(f);
+    if(!groups[area]) groups[area]={count:0,ha:0};
+    const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'0');
+    const dispArea=f.emaffArea?parseFloat(f.emaffArea):parseFloat(aA)||0;
+    groups[area].count++;
+    groups[area].ha+=dispArea/100;
+  });
+
+  // グループヘッダー＋圃場行を描画
   let html='', lastArea='';
-  let groupCount=0, groupArea=0;
   data.forEach(f=>{
     const area=getAreaName(f);
     if(area!==lastArea){
-      // グループ集計行を閉じる
-      if(lastArea){
-        html+=`<tr style="background:rgba(44,74,62,.04)">
-          <td colspan="2" style="padding:4px 12px;font-size:10px;color:var(--su);text-align:right">${groupCount}筆 / ${groupArea.toFixed(2)}ha</td>
-          <td colspan="10"></td>
-        </tr>`;
-      }
-      groupCount=0; groupArea=0;
+      const g=groups[area];
       html+=`<tr>
-        <td colspan="12" style="background:var(--g-deep,#2C4A3E);color:#fff;padding:7px 12px;font-size:12px;font-weight:700;letter-spacing:.05em;position:sticky;top:32px">
-          📍 ${area}
+        <td colspan="12" style="background:#2C4A3E;color:#fff;padding:0;position:sticky;top:32px;z-index:2">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px">
+            <span style="font-size:13px;font-weight:700;letter-spacing:.06em">📍 ${area}</span>
+            <span style="font-size:11px;opacity:.85;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:20px">${g.count}筆 &nbsp;|&nbsp; ${g.ha.toFixed(2)} ha</span>
+          </div>
         </td>
       </tr>`;
       lastArea=area;
     }
-    const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'0');
-    const dispArea=f.emaffArea?parseFloat(f.emaffArea):parseFloat(aA)||0;
-    groupCount++;
-    groupArea+=dispArea/100;
+    const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
     const ckHtml=(v,label)=>`<span style="font-size:10px;padding:1px 5px;border-radius:10px;${v?'background:rgba(44,74,62,.1);color:#2C4A3E':'color:#ccc'}">${v?'✓':'○'} ${label}</span>`;
-    html+=`<tr class="${selId===f.id?'sel':''}" onclick="focusField(${f.id})">
-      <td class="tname">${f.name}</td>
+    html+=`<tr class="${selId===f.id?'sel':''}">
+      <td class="tname" onclick="focusField(${f.id})" style="cursor:pointer">${f.name}</td>
       <td>${f.emaffArea?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
-      <td style="color:var(--su);font-size:10px">${f.lot||'—'}</td>
-      <td>${f.variety||'—'}</td>
-      <td>${f.plantDate?fmt(f.plantDate):'—'}</td>
-      <td>${f.harvestDate?fmt(f.harvestDate):'—'}</td>
-      <td>${f.owner||'—'}</td>
-      <td>${f.oName||'—'}${f.oTel1?'<br><span style="font-size:10px;color:var(--su)">'+f.oTel1+'</span>':''}</td>
-      <td>${f.oRent?Number(f.oRent).toLocaleString()+'円<br><span style="font-size:10px;color:var(--su)">'+RM[f.oRentMethod]+'</span>':'—'}</td>
-      <td style="white-space:nowrap">${ckHtml(f.ckPaid,'支払済')}<br>${ckHtml(f.ckCont,'継続')}</td>
+      <td>${inlineCell(f.id,'lot',f.lot,'地番')}</td>
+      <td>${inlineCell(f.id,'district',f.district,'地区名')}</td>
+      <td>${inlineCell(f.id,'variety',f.variety,'品種')}</td>
+      <td>${inlineDateCell(f.id,'plantDate',f.plantDate)}</td>
+      <td>${inlineDateCell(f.id,'harvestDate',f.harvestDate)}</td>
+      <td>${inlineCell(f.id,'owner',f.owner,'担当')}</td>
+      <td>${inlineCell(f.id,'oName',f.oName,'地主名')}</td>
+      <td>${inlineCell(f.id,'oTel1',f.oTel1,'電話')}</td>
       <td><span style="background:${sc2[f.status]}22;color:${sc2[f.status]};padding:2px 6px;border-radius:4px;font-size:10px">${SL[f.status]}</span></td>
-      <td><button onclick="event.stopPropagation();openEdit(${f.id})" style="padding:3px 8px;border-radius:5px;border:1px solid var(--cd);background:var(--cr);font-size:10px;cursor:pointer;font-family:inherit">編集</button></td>
+      <td><button onclick="event.stopPropagation();openEdit(${f.id})" style="padding:3px 8px;border-radius:5px;border:1px solid var(--cd);background:var(--cr);font-size:10px;cursor:pointer;font-family:inherit">詳細</button></td>
     </tr>`;
   });
-  // 最後のグループ集計
-  if(lastArea){
-    html+=`<tr style="background:rgba(44,74,62,.04)">
-      <td colspan="2" style="padding:4px 12px;font-size:10px;color:var(--su);text-align:right">${groupCount}筆 / ${groupArea.toFixed(2)}ha</td>
-      <td colspan="10"></td>
-    </tr>`;
-  }
   document.getElementById('ltbody').innerHTML=html;
 }
 function sortBy(k){sortKey===k?sortDir*=-1:(sortKey=k,sortDir=1);renderTable()}
@@ -1090,6 +1137,7 @@ function openEdit(id){
   // field tab
   document.getElementById('f-name').value=f.name||'';
   document.getElementById('f-lot').value=f.lot||'';
+  document.getElementById('f-district').value=f.district||'';
   document.getElementById('f-owner').value=f.owner||'';
   document.getElementById('f-variety').value=f.variety||'';
   document.getElementById('f-status').value=f.status||'unstarted';
@@ -1138,7 +1186,7 @@ function closeModal(){
   }
 }
 function clearForm(){
-  ['f-name','f-lot','f-owner','f-variety','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo','f-emaff-area',
+  ['f-name','f-lot','f-district','f-owner','f-variety','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo','f-emaff-area',
    'o-name','o-kana','o-tel1','o-tel2','o-addr','o-rel','o-rent','o-renttime','o-rentmemo',
    'o-cstart','o-cend','o-crenew','o-intention','o-gift'].forEach(id=>{
     const el=document.getElementById(id); if(el)el.value='';
@@ -1196,6 +1244,7 @@ function saveField(){
   const d={
     name, lot:v('f-lot'), owner:v('f-owner'), variety:v('f-variety'),
     emaffArea:v('f-emaff-area'),
+    district:v('f-district'),
     status:document.getElementById('f-status').value,
     seedDate:v('f-seed'), plantDate:v('f-plant'), harvestDate:v('f-harvest'),
     herbDate:v('f-herb'), fertDate:v('f-fert'), memo:v('f-memo'), photos:pendingPhotos,
