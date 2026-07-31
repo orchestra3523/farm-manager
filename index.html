@@ -271,6 +271,7 @@ textarea{resize:vertical;min-height:56px}
 <!-- MAP VIEW -->
 <div class="map-wrap" id="map-wrap">
   <div id="map"></div>
+  <div id="map-legend" style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,.92);border-radius:var(--r);padding:10px 14px;font-size:11px;box-shadow:var(--shadow);min-width:120px;max-height:60vh;overflow-y:auto;z-index:400"></div>
   <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleSideMobile()">
     <span id="map-toggle-icon">▲</span> <span id="map-toggle-label">一覧を表示</span>
   </button>
@@ -310,14 +311,16 @@ textarea{resize:vertical;min-height:56px}
       <thead><tr>
         <th onclick="sortBy('name')">圃場名</th>
         <th onclick="sortBy('area')">面積(a)</th>
-        <th>地番</th>
         <th onclick="sortBy('district')">地区名</th>
         <th>品種</th>
-        <th onclick="sortBy('plantDate')">田植え日</th>
-        <th onclick="sortBy('harvestDate')">収穫日</th>
-        <th>担当</th>
-        <th>地主名</th>
-        <th>電話</th>
+        <th onclick="sortBy('seedDate')">🌱種まき</th>
+        <th onclick="sortBy('plantDate')">🌿田植え</th>
+        <th>🌾幼穂形成</th>
+        <th>💊追肥</th>
+        <th>🌸出穂期</th>
+        <th>🚁防除1</th>
+        <th>🚁防除2</th>
+        <th onclick="sortBy('harvestDate')">🏮収穫目安</th>
         <th>状況</th>
         <th></th>
       </tr></thead>
@@ -333,6 +336,7 @@ textarea{resize:vertical;min-height:56px}
       <div class="mtabs">
         <button class="mtab on" id="mtab-field" onclick="switchMTab('field')">🌾 圃場情報</button>
         <button class="mtab" id="mtab-owner" onclick="switchMTab('owner')">👤 地主情報</button>
+        <button class="mtab" id="mtab-plan" onclick="switchMTab('plan')">📅 栽培計画</button>
       </div>
       <button class="mclose" onclick="closeModal()">✕</button>
     </div>
@@ -354,11 +358,24 @@ textarea{resize:vertical;min-height:56px}
           </div>
           <div class="frow c2">
             <div class="fg"><label>eMAFF面積（a）<span style="font-size:10px;color:var(--gl);margin-left:4px">← 優先して使用</span></label><input type="number" id="f-emaff-area" placeholder="例: 25.6" step="0.01"></div>
-            <div class="fg"><label>描画面積（自動計算）</label><div id="area-disp" class="area-disp" style="margin-bottom:0;font-size:12px;padding:6px 8px">—</div></div>
+            <div class="fg"><label>描画面積（自動計算）</label><div id="area-disp-calc" class="area-disp" style="margin-bottom:0;font-size:12px;padding:6px 8px">—</div></div>
           </div>
           <div class="frow c3">
             <div class="fg"><label>担当者</label><input type="text" id="f-owner" placeholder="例: 田中"></div>
-            <div class="fg"><label>品種</label><input type="text" id="f-variety" placeholder="例: コシヒカリ"></div>
+            <div class="fg"><label>品種</label>
+              <select id="f-variety" onchange="onVarietyChange()">
+                <option value="">-- 品種を選択 --</option>
+                <option value="コシヒカリ">コシヒカリ</option>
+                <option value="ふさこがね">ふさこがね</option>
+                <option value="にじのきらめき">にじのきらめき</option>
+                <option value="ふさおとめ">ふさおとめ</option>
+                <option value="粒すけ">粒すけ</option>
+                <option value="あきたこまち">あきたこまち</option>
+                <option value="ミルキークイーン">ミルキークイーン</option>
+                <option value="その他">その他（手入力）</option>
+              </select>
+              <input type="text" id="f-variety-other" placeholder="品種名を入力" style="display:none;margin-top:4px">
+            </div>
             <div class="fg"><label>ステータス</label>
               <select id="f-status">
                 <option value="unstarted">未着手</option>
@@ -369,15 +386,30 @@ textarea{resize:vertical;min-height:56px}
           </div>
         </div>
         <div class="fsec">
-          <div class="fsec-title">作業日程</div>
+          <div class="fsec-title">作業日程 <span style="font-size:10px;color:var(--gl);font-weight:400">← 「📅 栽培計画」タブで自動計算できます</span></div>
           <div class="frow c3">
-            <div class="fg"><label>種まき日</label><input type="date" id="f-seed"></div>
-            <div class="fg"><label>田植え日</label><input type="date" id="f-plant"></div>
-            <div class="fg"><label>収穫予定日</label><input type="date" id="f-harvest"></div>
+            <div class="fg"><label>🌱 種まき日</label><input type="date" id="f-seed"></div>
+            <div class="fg"><label>🌿 田植え日</label><input type="date" id="f-plant"></div>
+            <div class="fg"><label>🏮 収穫予定日</label><input type="date" id="f-harvest"></div>
           </div>
-          <div class="frow c2">
-            <div class="fg"><label>除草剤散布日</label><input type="date" id="f-herb"></div>
-            <div class="fg"><label>施肥日</label><input type="date" id="f-fert"></div>
+          <div style="background:rgba(44,74,62,.05);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--su);margin-bottom:8px">
+            💡 品種と種まき日を入力して「📅 栽培計画」タブを開くと、幼穂形成期・追肥・出穂期・防除・収穫日が自動計算されます
+          </div>
+        </div>
+        <div class="fsec">
+          <div class="fsec-title">✅ 実績入力 <span style="font-size:10px;color:var(--gl);font-weight:400">← 実際の作業日を入力</span></div>
+          <div class="frow c3">
+            <div class="fg"><label>🌱 種まき（実績）</label><input type="date" id="f-actual-seed"></div>
+            <div class="fg"><label>🌿 田植え（実績）</label><input type="date" id="f-actual-plant"></div>
+            <div class="fg"><label>🌸 出穂期（実績）</label><input type="date" id="f-actual-heading"></div>
+          </div>
+          <div class="frow c3">
+            <div class="fg"><label>💊 追肥（実績）</label><input type="date" id="f-actual-topdress"></div>
+            <div class="fg"><label>🚁 防除1（実績）</label><input type="date" id="f-actual-spray1"></div>
+            <div class="fg"><label>🚁 防除2（実績）</label><input type="date" id="f-actual-spray2"></div>
+          </div>
+          <div class="frow c1">
+            <div class="fg"><label>🏮 収穫（実績）</label><input type="date" id="f-actual-harvest"></div>
           </div>
         </div>
         <div class="fsec">
@@ -512,6 +544,59 @@ textarea{resize:vertical;min-height:56px}
         </div>
 
       </div><!-- /mpanel-owner -->
+
+      <!-- 栽培計画パネル -->
+      <div class="mpanel" id="mpanel-plan">
+        <div class="fsec">
+          <div class="fsec-title">品種・種まき日を入力すると全工程を自動計算</div>
+          <div class="frow c2">
+            <div class="fg">
+              <label>品種を選択</label>
+              <select id="plan-variety" onchange="calcPlan()">
+                <option value="">-- 品種を選択 --</option>
+                <option value="kosihikari">コシヒカリ</option>
+                <option value="fusakogane">ふさこがね</option>
+                <option value="nijino">にじのきらめき</option>
+                <option value="fusaotome">ふさおとめ</option>
+                <option value="tsubu">粒すけ</option>
+                <option value="custom">その他（手動入力）</option>
+              </select>
+            </div>
+            <div class="fg">
+              <label>種まき日</label>
+              <input type="date" id="plan-seed" onchange="calcPlan()">
+            </div>
+          </div>
+          <!-- カスタム品種設定 -->
+          <div id="plan-custom-row" style="display:none">
+            <div class="frow c3">
+              <div class="fg"><label>育苗日数（日）</label><input type="number" id="plan-ikusei" value="25" min="15" max="40" onchange="calcPlan()"></div>
+              <div class="fg"><label>移植→出穂（日）</label><input type="number" id="plan-suitou" value="85" min="60" max="110" onchange="calcPlan()"></div>
+              <div class="fg"><label>出穂→収穫（日）</label><input type="number" id="plan-harvest-days" value="38" min="25" max="50" onchange="calcPlan()"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 計画結果 -->
+        <div id="plan-result" style="display:none">
+          <div class="fsec">
+            <div class="fsec-title">📋 栽培工程カレンダー</div>
+            <div id="plan-timeline"></div>
+          </div>
+          <div class="fsec">
+            <div class="fsec-title">この計画を圃場に反映する</div>
+            <div style="font-size:12px;color:var(--su);margin-bottom:10px">下のボタンを押すと「圃場情報」タブの種まき・田植え・収穫日に自動入力されます</div>
+            <button class="btn btn-green" onclick="applyPlanToField()" style="width:100%;padding:10px">✅ この計画を圃場情報に反映する</button>
+            <div style="margin-top:8px;font-size:11px;color:var(--su)">※ 幼穂形成期・追肥・防除日は一覧表に自動表示されます（個別保存不要）</div>
+          </div>
+        </div>
+
+        <div id="plan-empty" style="text-align:center;padding:32px;color:var(--su)">
+          <div style="font-size:28px;margin-bottom:8px">📅</div>
+          品種と種まき日を選択すると<br>全工程が自動計算されます
+        </div>
+      </div><!-- /mpanel-plan -->
+
     </div>
     <div class="mft">
       <button class="btn btn-danger" id="mbtn-del" style="display:none;margin-right:auto" onclick="deleteField()">🗑 削除</button>
@@ -595,6 +680,13 @@ function rowToField(r){
     oGiftYears: r.o_gift_years||[],
     emaffArea: r.emaff_area||'',
     district: r.district||'',
+    actualSeedDate:     r.actual_seed_date||'',
+    actualPlantDate:    r.actual_plant_date||'',
+    actualHeadingDate:  r.actual_heading_date||'',
+    actualHarvestDate:  r.actual_harvest_date||'',
+    actualSpray1Date:   r.actual_spray1_date||'',
+    actualSpray2Date:   r.actual_spray2_date||'',
+    actualTopdressDate: r.actual_topdress_date||'',
     customColor: r.custom_color||null,
   };
 }
@@ -637,6 +729,13 @@ function fieldToRow(f){
     o_gift: f.oGift||null,
     o_gift_years: f.oGiftYears||[],
     district: f.district||null,
+    actual_seed_date:     f.actualSeedDate||null,
+    actual_plant_date:    f.actualPlantDate||null,
+    actual_heading_date:  f.actualHeadingDate||null,
+    actual_harvest_date:  f.actualHarvestDate||null,
+    actual_spray1_date:   f.actualSpray1Date||null,
+    actual_spray2_date:   f.actualSpray2Date||null,
+    actual_topdress_date: f.actualTopdressDate||null,
     custom_color: f.customColor||null,
     updated_at: new Date().toISOString(),
   };
@@ -731,6 +830,29 @@ L.control.layers(
 ).addTo(map);
 
 const SC={unstarted:{f:'#6A9B8A',s:'#3D6B5C'},planted:{f:'#2C4A3E',s:'#1A3228'},harvested:{f:'#C4A882',s:'#9A7852'}};
+
+// 品種ごとの地図色（fillColor, strokeColor）
+const VC={
+  'コシヒカリ':      {f:'#2196F3',s:'#1565C0'}, // 青
+  'ふさこがね':      {f:'#FF9800',s:'#E65100'}, // オレンジ
+  'にじのきらめき':  {f:'#E91E63',s:'#880E4F'}, // ピンク
+  'ふさおとめ':      {f:'#9C27B0',s:'#4A148C'}, // 紫
+  '粒すけ':          {f:'#00BCD4',s:'#006064'}, // シアン
+  'あきたこまち':    {f:'#FF5722',s:'#BF360C'}, // 深オレンジ
+  'ミルキークイーン':{f:'#FFEB3B',s:'#F57F17'}, // 黄
+};
+
+function getFieldColor(f){
+  // カスタムカラーが設定されていればそれを優先
+  if(f.customColor) return {f:f.customColor, s:f.customColor};
+  // 品種色
+  const vName=(f.variety||'').trim();
+  for(const [k,v] of Object.entries(VC)){
+    if(vName.includes(k)) return v;
+  }
+  // 品種未設定はステータス色
+  return SC[f.status]||SC.unstarted;
+}
 const SL={unstarted:'未着手',planted:'田植え済',harvested:'収穫済'};
 const RM={cash:'現金',transfer:'振込',rice:'物納',free:'無償','':`—`};
 const layerGroup=L.layerGroup().addTo(map);
@@ -819,13 +941,11 @@ function renderLayers(){
   const vis=new Set(getFiltered().map(f=>f.id));
   fields.forEach(f=>{
     if(!f.latlngs||f.latlngs.length<3)return;
-    const c=SC[f.status]||SC.unstarted;
+    const c=getFieldColor(f);
     const isVis=vis.has(f.id), isSel=selId===f.id;
-    const fillColor=f.customColor||c.f;
-    const strokeColor=f.customColor?(f.customColor):(isSel?'#FFFFFF':c.s);
     const poly=L.polygon(f.latlngs.map(p=>[p.lat,p.lng]),{
-      color:isSel?'#FFFFFF':strokeColor, weight:isSel?4:2.5,
-      fillColor:fillColor, fillOpacity:isVis?(isSel?.65:.4):0.08, opacity:isVis?1:.3
+      color:isSel?'#FFFFFF':c.s, weight:isSel?4:2.5,
+      fillColor:c.f, fillOpacity:isVis?(isSel?.65:.4):0.08, opacity:isVis?1:.3
     });
     const isMobile=window.innerWidth<=640;
     poly.bindPopup(buildPopup(f),{maxWidth:isMobile?320:280,maxHeight:400,autoPan:true,autoPanPaddingTopLeft:L.point(10,80),autoPanPaddingBottomRight:L.point(10,200)});
@@ -996,6 +1116,243 @@ function focusField(id){
 // ============================================================
 //  LIST TABLE
 // ============================================================
+
+// ============================================================
+//  栽培計画計算
+// ============================================================
+const VARIETY_DATA = {
+  kosihikari:  { name:'コシヒカリ',      ikusei:25, suitou:85, harvestDays:38 },
+  fusakogane:  { name:'ふさこがね',      ikusei:25, suitou:80, harvestDays:37 },
+  nijino:      { name:'にじのきらめき',  ikusei:28, suitou:85, harvestDays:40 },
+  fusaotome:   { name:'ふさおとめ',      ikusei:25, suitou:78, harvestDays:33 },
+  tsubu:       { name:'粒すけ',          ikusei:25, suitou:88, harvestDays:38 },
+};
+
+function addDays(dateStr, days){
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0,10);
+}
+
+function fmtPlan(dateStr){
+  if(!dateStr) return '—';
+  const [,m,d] = dateStr.split('-');
+  return parseInt(m) + '月' + parseInt(d) + '日';
+}
+
+// 計画を保存する変数
+let currentPlan = null;
+
+function calcPlan(){
+  const variety = document.getElementById('plan-variety').value;
+  const seedDate = document.getElementById('plan-seed').value;
+  const customRow = document.getElementById('plan-custom-row');
+
+  // カスタム品種の表示切替
+  customRow.style.display = variety === 'custom' ? 'block' : 'none';
+
+  if(!variety || !seedDate){
+    document.getElementById('plan-result').style.display = 'none';
+    document.getElementById('plan-empty').style.display = 'block';
+    return;
+  }
+
+  // 日数取得
+  let data;
+  if(variety === 'custom'){
+    data = {
+      name: 'カスタム品種',
+      ikusei: parseInt(document.getElementById('plan-ikusei').value)||25,
+      suitou: parseInt(document.getElementById('plan-suitou').value)||85,
+      harvestDays: parseInt(document.getElementById('plan-harvest-days').value)||38,
+    };
+  } else {
+    data = VARIETY_DATA[variety];
+  }
+
+  // 各工程の日付計算
+  const plantDate    = addDays(seedDate, data.ikusei);           // 田植え日
+  const headingDate  = addDays(plantDate, data.suitou);          // 出穂期
+  const youngSpike   = addDays(headingDate, -25);                // 幼穂形成期
+  const topdress     = addDays(youngSpike, 0);                   // 追肥（幼穂形成期）
+  const topdressEnd  = addDays(youngSpike, 7);                   // 追肥終了目安
+  const weedLimit    = addDays(youngSpike, -14);                 // 畦草刈り限度
+  const spray1       = addDays(headingDate, 3);                  // 防除1回目
+  const spray2       = addDays(headingDate, 15);                 // 防除2回目
+  const harvestDate  = addDays(headingDate, data.harvestDays);   // 収穫
+  const drainage     = addDays(headingDate, 25);                 // 落水
+
+  currentPlan = { seedDate, plantDate, headingDate, harvestDate, spray1, spray2, topdress };
+
+  // 実績日取得（編集中の圃場から）
+  const actualDates = {
+    seed:     document.getElementById('f-actual-seed')?.value||'',
+    plant:    document.getElementById('f-actual-plant')?.value||'',
+    heading:  document.getElementById('f-actual-heading')?.value||'',
+    harvest:  document.getElementById('f-actual-harvest')?.value||'',
+    spray1:   document.getElementById('f-actual-spray1')?.value||'',
+    spray2:   document.getElementById('f-actual-spray2')?.value||'',
+    topdress: document.getElementById('f-actual-topdress')?.value||'',
+  };
+
+  // 差異計算
+  function diffDays(plan, actual){
+    if(!plan||!actual)return null;
+    const d=(new Date(actual)-new Date(plan))/(1000*60*60*24);
+    return Math.round(d);
+  }
+  function diffBadge(plan, actual){
+    const d=diffDays(plan,actual);
+    if(d===null)return '';
+    if(d===0)return '<span style="background:#2C4A3E;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:6px">✓ 計画通り</span>';
+    if(d>0)return `<span style="background:#E74C3C;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:6px">▲ ${d}日遅れ</span>`;
+    return `<span style="background:#3498DB;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:6px">▼ ${Math.abs(d)}日早め</span>`;
+  }
+
+  const steps = [
+    { icon:'🌱', label:'種まき',       plan:seedDate,    actual:actualDates.seed,     color:'#6A9B8A' },
+    { icon:'🌿', label:'田植え',       plan:plantDate,   actual:actualDates.plant,    color:'#2C4A3E' },
+    { icon:'📏', label:'畦草刈り限度', plan:weedLimit,   actual:'',                   color:'#8B6F4E' },
+    { icon:'🌾', label:'幼穂形成期',   plan:youngSpike,  actual:'',                   color:'#C4A882' },
+    { icon:'💊', label:'追肥',         plan:topdress,    actual:actualDates.topdress, color:'#E67E22' },
+    { icon:'🌸', label:'出穂期',       plan:headingDate, actual:actualDates.heading,  color:'#9B59B6' },
+    { icon:'🚁', label:'防除1回目',    plan:spray1,      actual:actualDates.spray1,   color:'#E74C3C' },
+    { icon:'🚁', label:'防除2回目',    plan:spray2,      actual:actualDates.spray2,   color:'#C0392B' },
+    { icon:'💧', label:'落水目安',     plan:drainage,    actual:'',                   color:'#3498DB' },
+    { icon:'🏮', label:'収穫',         plan:harvestDate, actual:actualDates.harvest,  color:'#F39C12' },
+  ];
+
+  const hasActual = Object.values(actualDates).some(v=>v);
+
+  const html = `
+    <div style="background:rgba(44,74,62,.05);border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--su);margin-bottom:10px">
+        <strong>${data.name}</strong>　育苗${data.ikusei}日 / 移植→出穂${data.suitou}日 / 出穂→収穫${data.harvestDays}日
+      </div>
+      <!-- ヘッダー行 -->
+      <div style="display:grid;grid-template-columns:24px 1fr 90px ${hasActual?'90px 80px':''}; gap:8px;padding:4px 0 8px;border-bottom:2px solid var(--gp);font-size:10px;font-weight:700;color:var(--su);text-transform:uppercase">
+        <span></span><span>工程</span><span>📅 計画</span>${hasActual?'<span>✅ 実績</span><span>差異</span>':''}
+      </div>
+      ${steps.map(s=>`
+        <div style="display:grid;grid-template-columns:24px 1fr 90px ${hasActual?'90px 80px':''};gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--cd)">
+          <span style="font-size:15px;text-align:center">${s.icon}</span>
+          <span style="font-size:12px;font-weight:600;color:${s.color}">${s.label}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--tx)">${fmtPlan(s.plan)}</span>
+          ${hasActual?`
+            <span style="font-size:12px;color:${s.actual?'var(--tx)':'#ccc'}">${s.actual?fmtPlan(s.actual):'未入力'}</span>
+            <span>${diffBadge(s.plan,s.actual)}</span>
+          `:''}
+        </div>
+      `).join('')}
+    </div>
+    ${!hasActual?'<div style="text-align:center;font-size:11px;color:var(--su);padding:8px">💡 「圃場情報」タブの実績欄に実際の日付を入力すると計画との比較ができます</div>':''}`;
+
+  document.getElementById('plan-timeline').innerHTML = html;
+  document.getElementById('plan-result').style.display = 'block';
+  document.getElementById('plan-empty').style.display = 'none';
+}
+
+function applyPlanToField(){
+  if(!currentPlan) return;
+  // 圃場情報タブに日程を反映
+  if(currentPlan.seedDate)    document.getElementById('f-seed').value    = currentPlan.seedDate;
+  if(currentPlan.plantDate)   document.getElementById('f-plant').value   = currentPlan.plantDate;
+  if(currentPlan.harvestDate) document.getElementById('f-harvest').value = currentPlan.harvestDate;
+  if(currentPlan.topdress)    document.getElementById('f-fert').value     = currentPlan.topdress;
+  // 品種も反映（未入力の場合のみ）
+  const variety = document.getElementById('plan-variety').value;
+  const vSel = document.getElementById('f-variety');
+  if(VARIETY_DATA[variety] && !vSel.value){
+    vSel.value = variety in VARIETY_DATA ? VARIETY_DATA[variety].name : '';
+    onVarietyChange();
+  }
+  switchMTab('field');
+  showToast('✅ 栽培計画を圃場情報に反映しました');
+}
+
+// ============================================================
+//  VARIETY MAP LEGEND
+// ============================================================
+function updateVarietyLegend(){
+  // 実際に使われている品種を集計
+  const used = {};
+  fields.forEach(f=>{
+    const vName=(f.variety||'').trim();
+    if(!vName) return;
+    let matched='その他';
+    for(const k of Object.keys(VC)){
+      if(vName.includes(k)){matched=k;break;}
+    }
+    if(!used[matched]) used[matched]={color:VC[matched]||{f:'#6A9B8A'},count:0};
+    used[matched].count++;
+  });
+  // ステータス凡例も追加
+  const statusItems=[
+    {label:'未着手',color:'#6A9B8A'},
+    {label:'田植え済',color:'#2C4A3E'},
+    {label:'収穫済',color:'#C4A882'},
+  ];
+  const legendEl=document.getElementById('map-legend');
+  if(!legendEl)return;
+  let html='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--su);margin-bottom:6px">品種</div>';
+  for(const [k,v] of Object.entries(used)){
+    const col=VC[k]?VC[k].f:'#6A9B8A';
+    html+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <div style="width:12px;height:12px;border-radius:3px;background:${col};flex-shrink:0"></div>
+      <span style="font-size:11px">${k} <span style="color:var(--su)">(${v.count}筆)</span></span>
+    </div>`;
+  }
+  if(Object.keys(used).length===0){
+    html+='<div style="font-size:10px;color:var(--su)">品種未登録</div>';
+  }
+  legendEl.innerHTML=html;
+}
+
+// ============================================================
+//  PLAN DATE CALCULATOR (for list table)
+// ============================================================
+function calcPlanDates(f){
+  const plantDate = f.plantDate;
+  if(!plantDate) return {};
+
+  const vName = (f.variety||'').trim();
+  let vData = VARIETY_DATA.kosihikari;
+  if(vName.includes('コシヒカリ')) vData = VARIETY_DATA.kosihikari;
+  else if(vName.includes('ふさこがね')) vData = VARIETY_DATA.fusakogane;
+  else if(vName.includes('にじのきらめき')) vData = VARIETY_DATA.nijino;
+  else if(vName.includes('ふさおとめ')) vData = VARIETY_DATA.fusaotome;
+  else if(vName.includes('粒すけ')) vData = VARIETY_DATA.tsubu;
+
+  const headingDate = addDays(plantDate, vData.suitou);
+  const youngSpike  = addDays(headingDate, -25);
+  const topdress    = addDays(youngSpike, 0);
+  const spray1      = addDays(headingDate, 3);
+  const spray2      = addDays(headingDate, 15);
+  const harvest     = addDays(headingDate, vData.harvestDays);
+  const seedDate    = addDays(plantDate, -vData.ikusei);
+
+  return { seedDate, headingDate, youngSpike, topdress, spray1, spray2, harvestCalc:harvest };
+}
+
+// 計画 vs 実績の差異を色付きセルで表示
+function planActualCell(planDate, actualDate){
+  const planStr = planDate ? fmtPlan(planDate) : '—';
+  if(!actualDate){
+    return `<span style="font-size:11px;color:var(--tx)">${planStr}</span>`;
+  }
+  const diff = Math.round((new Date(actualDate)-new Date(planDate))/(1000*60*60*24));
+  const actualStr = fmtPlan(actualDate);
+  let badge='', badgeColor='';
+  if(diff===0){ badge='✓'; badgeColor='#2C4A3E'; }
+  else if(diff>0){ badge='+'+diff+'日'; badgeColor='#E74C3C'; }
+  else { badge=diff+'日'; badgeColor='#3498DB'; }
+  return `<div style="line-height:1.3">
+    <span style="font-size:11px;color:var(--su);text-decoration:line-through">${planStr}</span>
+    <span style="font-size:11px;font-weight:700;color:var(--tx);margin-left:3px">${actualStr}</span>
+    <span style="background:${badgeColor};color:#fff;padding:0px 4px;border-radius:8px;font-size:9px;margin-left:2px">${badge}</span>
+  </div>`;
+}
+
 // ============================================================
 //  INLINE EDIT HELPERS
 // ============================================================
@@ -1105,17 +1462,21 @@ function renderTable(){
     }
     const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
     const ckHtml=(v,label)=>`<span style="font-size:10px;padding:1px 5px;border-radius:10px;${v?'background:rgba(44,74,62,.1);color:#2C4A3E':'color:#ccc'}">${v?'✓':'○'} ${label}</span>`;
+    // 栽培計画日程を計算して表示
+    const planDates = calcPlanDates(f);
     html+=`<tr class="${selId===f.id?'sel':''}">
       <td class="tname" onclick="focusField(${f.id})" style="cursor:pointer">${f.name}</td>
       <td>${f.emaffArea?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
-      <td>${inlineCell(f.id,'lot',f.lot,'地番')}</td>
       <td>${inlineCell(f.id,'district',f.district,'地区名')}</td>
       <td>${inlineCell(f.id,'variety',f.variety,'品種')}</td>
-      <td>${inlineDateCell(f.id,'plantDate',f.plantDate)}</td>
-      <td>${inlineDateCell(f.id,'harvestDate',f.harvestDate)}</td>
-      <td>${inlineCell(f.id,'owner',f.owner,'担当')}</td>
-      <td>${inlineCell(f.id,'oName',f.oName,'地主名')}</td>
-      <td>${inlineCell(f.id,'oTel1',f.oTel1,'電話')}</td>
+      <td style="white-space:nowrap">${planActualCell(planDates.seedDate||f.seedDate, f.actualSeedDate)}</td>
+      <td style="white-space:nowrap">${planActualCell(f.plantDate, f.actualPlantDate)}</td>
+      <td style="white-space:nowrap;color:#C4A882;font-size:11px">${planDates.youngSpike?fmt(planDates.youngSpike):'—'}</td>
+      <td style="white-space:nowrap">${planActualCell(planDates.topdress, f.actualTopdressDate)}</td>
+      <td style="white-space:nowrap">${planActualCell(planDates.headingDate, f.actualHeadingDate)}</td>
+      <td style="white-space:nowrap">${planActualCell(planDates.spray1, f.actualSpray1Date)}</td>
+      <td style="white-space:nowrap">${planActualCell(planDates.spray2, f.actualSpray2Date)}</td>
+      <td style="white-space:nowrap">${planActualCell(f.harvestDate||planDates.harvestCalc, f.actualHarvestDate)}</td>
       <td><span style="background:${sc2[f.status]}22;color:${sc2[f.status]};padding:2px 6px;border-radius:4px;font-size:10px">${SL[f.status]}</span></td>
       <td><button onclick="event.stopPropagation();openEdit(${f.id})" style="padding:3px 8px;border-radius:5px;border:1px solid var(--cd);background:var(--cr);font-size:10px;cursor:pointer;font-family:inherit">詳細</button></td>
     </tr>`;
@@ -1138,6 +1499,17 @@ function openEdit(id){
   document.getElementById('f-name').value=f.name||'';
   document.getElementById('f-lot').value=f.lot||'';
   document.getElementById('f-district').value=f.district||'';
+  // 品種セレクトに設定
+  const vSel=document.getElementById('f-variety');
+  const vOther=document.getElementById('f-variety-other');
+  const vOptions=['コシヒカリ','ふさこがね','にじのきらめき','ふさおとめ','粒すけ','あきたこまち','ミルキークイーン'];
+  if(vOptions.includes(f.variety||'')){
+    vSel.value=f.variety||''; vOther.style.display='none';
+  } else if(f.variety){
+    vSel.value='その他'; vOther.value=f.variety; vOther.style.display='block';
+  } else {
+    vSel.value=''; vOther.style.display='none';
+  }
   document.getElementById('f-owner').value=f.owner||'';
   document.getElementById('f-variety').value=f.variety||'';
   document.getElementById('f-status').value=f.status||'unstarted';
@@ -1147,6 +1519,13 @@ function openEdit(id){
   document.getElementById('f-herb').value=f.herbDate||'';
   document.getElementById('f-fert').value=f.fertDate||'';
   document.getElementById('f-memo').value=f.memo||'';
+  document.getElementById('f-actual-seed').value=f.actualSeedDate||'';
+  document.getElementById('f-actual-plant').value=f.actualPlantDate||'';
+  document.getElementById('f-actual-heading').value=f.actualHeadingDate||'';
+  document.getElementById('f-actual-harvest').value=f.actualHarvestDate||'';
+  document.getElementById('f-actual-spray1').value=f.actualSpray1Date||'';
+  document.getElementById('f-actual-spray2').value=f.actualSpray2Date||'';
+  document.getElementById('f-actual-topdress').value=f.actualTopdressDate||'';
   const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
   document.getElementById('area-disp').textContent=aA+' a（描画）';
   document.getElementById('f-emaff-area').value=f.emaffArea||'';
@@ -1186,22 +1565,59 @@ function closeModal(){
   }
 }
 function clearForm(){
-  ['f-name','f-lot','f-district','f-owner','f-variety','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo','f-emaff-area',
+  ['f-name','f-lot','f-district','f-owner','f-variety-other','f-seed','f-plant','f-harvest','f-herb','f-fert','f-memo','f-emaff-area',
    'o-name','o-kana','o-tel1','o-tel2','o-addr','o-rel','o-rent','o-renttime','o-rentmemo',
    'o-cstart','o-cend','o-crenew','o-intention','o-gift'].forEach(id=>{
     const el=document.getElementById(id); if(el)el.value='';
   });
   document.getElementById('f-status').value='unstarted';
+  document.getElementById('f-variety').value='';
+  const vo=document.getElementById('f-variety-other'); if(vo)vo.style.display='none';
   ['ck-paid','ck-cont','ck-renew','ck-contact','ck-gift'].forEach(id=>{document.getElementById(id).checked=false});
   syncChecks(); rentMethod=''; renderRentMethod(); giftYears=[]; renderGiftYears();
   document.getElementById('pgrid').innerHTML='';
 }
 
+function onVarietyChange(){
+  const sel = document.getElementById('f-variety').value;
+  const other = document.getElementById('f-variety-other');
+  if(sel === 'その他'){
+    other.style.display = 'block';
+    other.focus();
+  } else {
+    other.style.display = 'none';
+  }
+  // 栽培計画タブの品種も連動
+  const planSel = document.getElementById('plan-variety');
+  if(planSel){
+    const varMap = {
+      'コシヒカリ':'kosihikari','ふさこがね':'fusakogane',
+      'にじのきらめき':'nijino','ふさおとめ':'fusaotome',
+      '粒すけ':'tsubu'
+    };
+    planSel.value = varMap[sel] || '';
+    calcPlan();
+  }
+}
+
 function switchMTab(t){
-  ['field','owner'].forEach(v=>{
+  ['field','owner','plan'].forEach(v=>{
     document.getElementById('mtab-'+v).classList.toggle('on',v===t);
     document.getElementById('mpanel-'+v).classList.toggle('on',v===t);
   });
+  if(t==='plan'){
+    // 圃場情報タブの品種・種まき日を栽培計画タブに反映
+    const fVariety = document.getElementById('f-variety').value;
+    const fSeed = document.getElementById('f-seed').value;
+    const varMap = {
+      'コシヒカリ':'kosihikari','ふさこがね':'fusakogane',
+      'にじのきらめき':'nijino','ふさおとめ':'fusaotome','粒すけ':'tsubu'
+    };
+    const planSel = document.getElementById('plan-variety');
+    if(fVariety && varMap[fVariety] && !planSel.value) planSel.value = varMap[fVariety];
+    if(fSeed && !document.getElementById('plan-seed').value) document.getElementById('plan-seed').value = fSeed;
+    calcPlan();
+  }
 }
 
 // ============================================================
@@ -1242,7 +1658,8 @@ function saveField(){
   const name=document.getElementById('f-name').value.trim();
   if(!name){showToast('⚠ 圃場名を入力してください');return}
   const d={
-    name, lot:v('f-lot'), owner:v('f-owner'), variety:v('f-variety'),
+    name, lot:v('f-lot'), owner:v('f-owner'),
+    variety:(document.getElementById('f-variety').value==='その他'?v('f-variety-other'):v('f-variety')),
     emaffArea:v('f-emaff-area'),
     district:v('f-district'),
     status:document.getElementById('f-status').value,
@@ -1355,7 +1772,7 @@ function switchView(v){
   if(v==='map')setTimeout(()=>map.invalidateSize(),50);
   else renderTable();
 }
-function rerender(){renderLayers();renderSide();renderTable();updateStats()}
+function rerender(){renderLayers();renderSide();renderTable();updateStats();updateVarietyLegend();}
 function persist(){ rerender(); }
 
 // ============================================================
