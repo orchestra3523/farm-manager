@@ -286,6 +286,7 @@ textarea{resize:vertical;min-height:56px}
       <div class="chip" onclick="setF('unstarted',this)">未着手</div>
       <div class="chip" onclick="setF('planted',this)">田植え済</div>
       <div class="chip" onclick="setF('harvested',this)">収穫済</div>
+      <div class="chip" onclick="setF('abandoned',this)">×耕作</div>
       <div class="chip" onclick="setF('unpaid',this)">賃料未払い</div>
     </div>
     <div class="flist" id="flist"></div>
@@ -301,6 +302,7 @@ textarea{resize:vertical;min-height:56px}
       <div class="chip" onclick="setF('unstarted',this)">未着手</div>
       <div class="chip" onclick="setF('planted',this)">田植え済</div>
       <div class="chip" onclick="setF('harvested',this)">収穫済</div>
+      <div class="chip" onclick="setF('abandoned',this)">×耕作</div>
       <div class="chip" onclick="setF('unpaid',this)">賃料未払い</div>
     </div>
     <span style="margin-left:auto;font-size:11px;color:var(--su)" id="lcount"></span>
@@ -381,6 +383,7 @@ textarea{resize:vertical;min-height:56px}
                 <option value="unstarted">未着手</option>
                 <option value="planted">田植え済</option>
                 <option value="harvested">収穫済</option>
+                <option value="abandoned">×耕作</option>
               </select>
             </div>
           </div>
@@ -678,7 +681,7 @@ function rowToField(r){
     oIntention: r.o_intention||'',
     oGift: r.o_gift||'',
     oGiftYears: r.o_gift_years||[],
-    emaffArea: r.emaff_area||'',
+    emaffArea: (r.emaff_area===null||r.emaff_area===undefined)?'':r.emaff_area,
     district: r.district||'',
     actualSeedDate:     r.actual_seed_date||'',
     actualPlantDate:    r.actual_plant_date||'',
@@ -829,7 +832,7 @@ L.control.layers(
   {position:'topright', collapsed:false}
 ).addTo(map);
 
-const SC={unstarted:{f:'#6A9B8A',s:'#3D6B5C'},planted:{f:'#2C4A3E',s:'#1A3228'},harvested:{f:'#C4A882',s:'#9A7852'}};
+const SC={unstarted:{f:'#6A9B8A',s:'#3D6B5C'},planted:{f:'#2C4A3E',s:'#1A3228'},harvested:{f:'#C4A882',s:'#9A7852'},abandoned:{f:'#9E9E9E',s:'#616161'}};
 
 // 品種ごとの地図色（fillColor, strokeColor）
 const VC={
@@ -853,7 +856,8 @@ function getFieldColor(f){
   // 品種未設定はステータス色
   return SC[f.status]||SC.unstarted;
 }
-const SL={unstarted:'未着手',planted:'田植え済',harvested:'収穫済'};
+const SL={unstarted:'未着手',planted:'田植え済',harvested:'収穫済',abandoned:'×耕作'};
+function hasEmaff(v){return v!==undefined&&v!==null&&v!=='';}
 const RM={cash:'現金',transfer:'振込',rice:'物納',free:'無償','':`—`};
 const layerGroup=L.layerGroup().addTo(map);
 
@@ -977,6 +981,7 @@ function buildPopup(f){
     {v:'unstarted',label:'未着手',color:'#6A9B8A'},
     {v:'planted',  label:'田植済', color:'#2C4A3E'},
     {v:'harvested',label:'収穫済', color:'#C4A882'},
+    {v:'abandoned',label:'×耕作', color:'#9E9E9E'},
   ];
   // カスタムカラーパレット
   const palette=['#2C4A3E','#6A9B8A','#C4A882','#8B6F4E','#E74C3C','#3498DB','#F39C12','#9B59B6','#1ABC9C','#E67E22'];
@@ -990,7 +995,7 @@ function buildPopup(f){
   }).join('');
   return `
     <div class="pop-name">${f.name}</div>
-    <div class="pop-row">面積: <strong>${f.emaffArea?f.emaffArea+' a <span style="font-size:10px;color:#6A9B8A">eMAFF</span>':aA+' a <span style="font-size:10px;color:#aaa">概算</span>'}</strong>${f.lot?` | 地番: <strong>${f.lot}</strong>`:''}</div>
+    <div class="pop-row">面積: <strong>${hasEmaff(f.emaffArea)?f.emaffArea+' a <span style="font-size:10px;color:#6A9B8A">eMAFF</span>':aA+' a <span style="font-size:10px;color:#aaa">概算</span>'}</strong>${f.lot?` | 地番: <strong>${f.lot}</strong>`:''}</div>
     ${f.variety?`<div class="pop-row">品種: <strong>${f.variety}</strong></div>`:''}
     ${f.oName?`<div class="pop-row">地主: <strong>${f.oName}</strong>${f.oTel1?' | '+f.oTel1:''}</div>`:''}
     <div style="margin:7px 0 4px">
@@ -1074,14 +1079,14 @@ function renderSide(){
     list.innerHTML=`<div style="text-align:center;padding:28px 14px;color:var(--su)"><div style="font-size:28px;margin-bottom:8px">🌱</div>圃場がありません<br><small>「圃場を描く」から登録</small></div>`;
     return;
   }
-  const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882'};
+  const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882',abandoned:'#9E9E9E'};
   list.innerHTML=fl.map(f=>{
     const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
     return `<div class="fcard ${selId===f.id?'sel':''}" onclick="focusField(${f.id})">
       <div class="fc-top">
         <div><div class="fc-name">${f.name}</div><div class="fc-lot">${f.lot||'地番未登録'}</div></div>
         <div style="text-align:right">
-          <div class="fc-area">${f.emaffArea?f.emaffArea+'a':aA+'a'}${f.emaffArea?'<span style="font-size:8px;opacity:.7"> eMAFF</span>':''}</div>
+          <div class="fc-area">${hasEmaff(f.emaffArea)?f.emaffArea+'a':aA+'a'}${hasEmaff(f.emaffArea)?'<span style="font-size:8px;opacity:.7"> eMAFF</span>':''}</div>
           <div style="margin-top:3px;display:flex;align-items:center;gap:3px;justify-content:flex-end">
             <span class="sdot" style="background:${sc2[f.status]}"></span>
             <span style="font-size:9px;color:${sc2[f.status]}">${SL[f.status]}</span>
@@ -1426,7 +1431,7 @@ function renderTable(){
     });
   }
   document.getElementById('lcount').textContent=data.length+'筆';
-  const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882'};
+  const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882',abandoned:'#9E9E9E'};
   if(!data.length){
     document.getElementById('ltbody').innerHTML='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
     return;
@@ -1438,7 +1443,7 @@ function renderTable(){
     const area=getAreaName(f);
     if(!groups[area]) groups[area]={count:0,ha:0};
     const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'0');
-    const dispArea=f.emaffArea?parseFloat(f.emaffArea):parseFloat(aA)||0;
+    const dispArea=hasEmaff(f.emaffArea)?parseFloat(f.emaffArea):parseFloat(aA)||0;
     groups[area].count++;
     groups[area].ha+=dispArea/100;
   });
@@ -1465,7 +1470,7 @@ function renderTable(){
     const planDates = calcPlanDates(f);
     html+=`<tr class="${selId===f.id?'sel':''}">
       <td class="tname" onclick="focusField(${f.id})" style="cursor:pointer">${f.name}</td>
-      <td>${f.emaffArea?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
+      <td>${hasEmaff(f.emaffArea)?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
       <td>${inlineCell(f.id,'district',f.district,'地区名')}</td>
       <td>${inlineCell(f.id,'variety',f.variety,'品種')}</td>
       <td style="white-space:nowrap">${planActualCell(planDates.seedDate||f.seedDate, f.actualSeedDate)}</td>
@@ -1525,7 +1530,7 @@ function openEdit(id){
   document.getElementById('f-actual-topdress').value=f.actualTopdressDate||'';
   const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
   document.getElementById('area-disp').textContent=aA+' a（描画）';
-  document.getElementById('f-emaff-area').value=f.emaffArea||'';
+  document.getElementById('f-emaff-area').value=hasEmaff(f.emaffArea)?f.emaffArea:'';
   // owner tab
   document.getElementById('ck-paid').checked=!!f.ckPaid;
   document.getElementById('ck-cont').checked=!!f.ckCont;
