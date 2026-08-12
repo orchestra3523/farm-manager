@@ -762,7 +762,7 @@ async function saveToDBNew(field){
   const row = fieldToRow(field);
   delete row.id;
   if(field.emaffArea!==undefined && field.emaffArea!==null && field.emaffArea!==''){
-    row.emaff_area = parseFloat(field.emaffArea)||null;
+    const _ea = parseFloat(field.emaffArea); row.emaff_area = isNaN(_ea) ? null : _ea;
   }
   const res = await supaFetch('fields?select=id', {
     method: 'POST',
@@ -782,7 +782,7 @@ async function saveToDB(field){
   delete row.id;
   // emaff_areaを別途追加（列が存在する場合のみ）
   if(field.emaffArea!==undefined && field.emaffArea!==null && field.emaffArea!==''){
-    row.emaff_area = parseFloat(field.emaffArea)||null;
+    const _ea = parseFloat(field.emaffArea); row.emaff_area = isNaN(_ea) ? null : _ea;
   }
   await supaFetch('fields?id=eq.' + dbId, {
     method: 'PATCH',
@@ -1749,7 +1749,7 @@ function updateStats(){
   document.getElementById('sn-count').textContent=fields.length;
   // eMAFF面積があればそちらを優先、なければポリゴン計算値を使用
   const tot=fields.reduce((s,f)=>{
-    if(f.emaffArea&&parseFloat(f.emaffArea)>0) return s+(parseFloat(f.emaffArea)*100); // a→m2
+    if(f.emaffArea!==undefined&&f.emaffArea!==null&&f.emaffArea!==''&&!isNaN(parseFloat(f.emaffArea))) return s+(parseFloat(f.emaffArea)*100); // a→m2
     return s+(f.latlngs?calcArea(f.latlngs):0);
   },0);
   document.getElementById('sn-area').textContent=(tot/10000).toFixed(2);
