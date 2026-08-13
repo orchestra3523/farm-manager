@@ -243,6 +243,7 @@ textarea{resize:vertical;min-height:56px}
     <div><div class="htitle">圃場管理</div><div class="hsub">田んぼのオーケストラ</div></div>
   </div>
   <div class="hbtns">
+    <button class="btn btn-ghost" id="reminder-btn" onclick="openReminders()" title="やること" style="position:relative">🔔<span id="reminder-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#E74C3C;color:#fff;border-radius:10px;font-size:9px;padding:1px 5px;min-width:15px;text-align:center;line-height:14px;font-weight:700">0</span></button>
     <button class="btn btn-ghost" onclick="exportCSV()">📥 CSV</button>
     <button class="btn btn-ghost" onclick="document.getElementById('kml-input').click()" title="GoogleマイマップからKMLをインポート">🗂 KML読込</button>
     <input type="file" id="kml-input" accept=".kml,.kmz" style="display:none" onchange="importKML(event)">
@@ -614,6 +615,17 @@ textarea{resize:vertical;min-height:56px}
       <button class="btn btn-outline" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-green" onclick="saveField()">保存する</button>
     </div>
+  </div>
+</div>
+
+<!-- ====== REMINDER ====== -->
+<div class="overlay hide" id="reminder-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="mhd">
+      <div style="font-weight:700;font-size:15px;color:var(--gd)">🔔 やること</div>
+      <button class="mclose" onclick="closeReminders()">✕</button>
+    </div>
+    <div class="mbody" id="reminder-body"></div>
   </div>
 </div>
 
@@ -1832,7 +1844,83 @@ function switchView(v){
   if(v==='map')setTimeout(()=>map.invalidateSize(),50);
   else renderTable();
 }
-function rerender(){renderLayers();renderSide();renderTable();updateStats();updateVarietyLegend();}
+// ============================================================
+//  作業リマインダー
+// ============================================================
+function generateReminders(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const tasks=[];
+  fields.forEach(f=>{
+    if(f.status==='harvested'||f.status==='abandoned') return;
+    const pd=calcPlanDates(f);
+    const defs=[
+      {label:'種まき',       icon:'🌱', planned:pd.seedDate||f.seedDate, actual:f.actualSeedDate},
+      {label:'田植え',       icon:'🌿', planned:f.plantDate,             actual:f.actualPlantDate},
+      {label:'追肥',         icon:'💊', planned:pd.topdress,             actual:f.actualTopdressDate},
+      {label:'出穂期の確認', icon:'🌸', planned:pd.headingDate,          actual:f.actualHeadingDate},
+      {label:'防除1回目',    icon:'🚁', planned:pd.spray1,               actual:f.actualSpray1Date},
+      {label:'防除2回目',    icon:'🚁', planned:pd.spray2,               actual:f.actualSpray2Date},
+      {label:'収穫',         icon:'🏮', planned:f.harvestDate||pd.harvestCalc, actual:f.actualHarvestDate},
+    ];
+    defs.forEach(d=>{
+      if(!d.planned||d.actual) return;
+      const pDate=new Date(d.planned); pDate.setHours(0,0,0,0);
+      const diff=Math.round((today-pDate)/(1000*60*60*24)); // 正=期限超過、0=本日、負=これから
+      if(diff< -7||diff>30) return; // 直近7日先〜30日超過分のみ表示
+      tasks.push({fieldId:f.id, fieldName:f.name, label:d.label, icon:d.icon, planned:d.planned, diff});
+    });
+  });
+  tasks.sort((a,b)=>b.diff-a.diff);
+  return tasks;
+}
+function renderReminderBadge(){
+  const badge=document.getElementById('reminder-badge');
+  if(!badge)return;
+  const count=generateReminders().filter(t=>t.diff>=0).length;
+  if(count>0){ badge.textContent=count>99?'99+':count; badge.style.display='block'; }
+  else { badge.style.display='none'; }
+}
+function openReminders(){
+  const tasks=generateReminders();
+  const body=document.getElementById('reminder-body');
+  if(!tasks.length){
+    body.innerHTML='<div style="text-align:center;padding:32px;color:var(--su)"><div style="font-size:28px;margin-bottom:8px">🎉</div>今のところ、やることはありません</div>';
+  } else {
+    let html='', lastGroup='';
+    tasks.forEach(t=>{
+      const group = t.diff>0?'overdue':t.diff===0?'today':'upcoming';
+      if(group!==lastGroup){
+        const glabel = group==='overdue'?'⚠ 期限超過':group==='today'?'📅 本日':'🔜 今後7日以内';
+        const gcolor = group==='overdue'?'#E74C3C':group==='today'?'#2C4A3E':'#3498DB';
+        html+=`<div style="font-size:11px;font-weight:700;color:${gcolor};margin:${lastGroup?'16px':'0'} 0 8px;text-transform:uppercase;letter-spacing:.05em">${glabel}</div>`;
+        lastGroup=group;
+      }
+      const diffText = t.diff>0?t.diff+'日超過':t.diff===0?'本日':Math.abs(t.diff)+'日後';
+      const diffColor = t.diff>0?'#E74C3C':t.diff===0?'#2C4A3E':'#3498DB';
+      html+=`<div onclick="jumpToFieldFromReminder(${t.fieldId})" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;border:1px solid var(--cd);margin-bottom:6px;cursor:pointer;background:var(--wh)">
+        <span style="font-size:18px">${t.icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:12px;color:var(--gd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.fieldName}</div>
+          <div style="font-size:11px;color:var(--su)">${t.label} — ${fmtPlan(t.planned)}</div>
+        </div>
+        <span style="font-size:10px;font-weight:700;color:${diffColor};white-space:nowrap">${diffText}</span>
+      </div>`;
+    });
+    body.innerHTML=html;
+  }
+  document.getElementById('reminder-overlay').classList.remove('hide');
+}
+function closeReminders(){
+  document.getElementById('reminder-overlay').classList.add('hide');
+}
+function jumpToFieldFromReminder(id){
+  closeReminders();
+  switchView('map');
+  focusField(id);
+  setTimeout(()=>openEdit(id),400);
+}
+
+function rerender(){renderLayers();renderSide();renderTable();updateStats();updateVarietyLegend();renderReminderBadge();}
 function persist(){ rerender(); }
 
 // ============================================================
