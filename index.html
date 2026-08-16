@@ -404,6 +404,10 @@ textarea{resize:vertical;min-height:56px}
             <div class="fg"><label>🌿 田植え日</label><input type="date" id="f-plant"></div>
             <div class="fg"><label>🏮 収穫予定日</label><input type="date" id="f-harvest"></div>
           </div>
+          <label class="check-item" id="f-ippatsu-wrap" style="margin-bottom:8px">
+            <input type="checkbox" id="f-ippatsu" onchange="onIppatsuChange()">
+            <div class="check-label">🌾 一発剤（一発肥料）を使用<small>追肥不要のため、追肥のリマインダー・計画から除外します</small></div>
+          </label>
           <div style="background:rgba(44,74,62,.05);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--su);margin-bottom:8px">
             💡 品種と種まき日を入力して「📅 栽培計画」タブを開くと、幼穂形成期・追肥・出穂期・防除・収穫日が自動計算されます
           </div>
@@ -711,6 +715,7 @@ function rowToField(r){
     actualSpray2Date:   r.actual_spray2_date||'',
     actualTopdressDate: r.actual_topdress_date||'',
     customColor: r.custom_color||null,
+    ippatsuZai: !!r.ippatsu_zai,
   };
 }
 
@@ -760,6 +765,7 @@ function fieldToRow(f){
     actual_spray2_date:   f.actualSpray2Date||null,
     actual_topdress_date: f.actualTopdressDate||null,
     custom_color: f.customColor||null,
+    ippatsu_zai: !!f.ippatsuZai,
     updated_at: new Date().toISOString(),
   };
 }
@@ -1284,12 +1290,13 @@ function calcPlan(){
     return `<span style="background:#3498DB;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:6px">▼ ${Math.abs(d)}日早め</span>`;
   }
 
+  const isIppatsu = document.getElementById('f-ippatsu')?.checked;
   const steps = [
     { icon:'🌱', label:'種まき',       plan:seedDate,    actual:actualDates.seed,     color:'#6A9B8A' },
     { icon:'🌿', label:'田植え',       plan:plantDate,   actual:actualDates.plant,    color:'#2C4A3E' },
     { icon:'📏', label:'畦草刈り限度', plan:weedLimit,   actual:'',                   color:'#8B6F4E' },
     { icon:'🌾', label:'幼穂形成期',   plan:youngSpike,  actual:'',                   color:'#C4A882' },
-    { icon:'💊', label:'追肥',         plan:topdress,    actual:actualDates.topdress, color:'#E67E22' },
+    { icon:'💊', label: isIppatsu?'追肥（一発剤のため不要）':'追肥', plan:topdress, actual:actualDates.topdress, color: isIppatsu?'#B0B0B0':'#E67E22' },
     { icon:'🌸', label:'出穂期',       plan:headingDate, actual:actualDates.heading,  color:'#9B59B6' },
     { icon:'🚁', label:'防除1回目',    plan:spray1,      actual:actualDates.spray1,   color:'#E74C3C' },
     { icon:'🚁', label:'防除2回目',    plan:spray2,      actual:actualDates.spray2,   color:'#C0392B' },
@@ -1434,6 +1441,37 @@ function inlineCell(id, field, val, placeholder){
   const display = val || `<span style="color:#ccc;font-size:10px">${placeholder}</span>`;
   return `<span class="inline-cell" onclick="event.stopPropagation();startInlineEdit(this,${id},'${field}')" title="タップして編集" style="cursor:pointer;display:block;min-width:40px;padding:2px 4px;border-radius:4px;border:1px solid transparent" onmouseover="this.style.borderColor='var(--gp)'" onmouseout="this.style.borderColor='transparent'">${display}</span>`;
 }
+const VARIETY_OPTIONS=['コシヒカリ','ふさこがね','にじのきらめき','ふさおとめ','粒すけ','あきたこまち','ミルキークイーン'];
+function inlineVarietyCell(id, val){
+  const opts=VARIETY_OPTIONS.map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('');
+  const isCustom = val && !VARIETY_OPTIONS.includes(val);
+  const customOpt = isCustom ? `<option value="${val}" selected>${val}</option>` : '';
+  return `<select onclick="event.stopPropagation()" onchange="event.stopPropagation();onVarietySelectChange(this,${id})" style="font-size:11px;padding:3px 4px;border:1px solid var(--cd);border-radius:4px;font-family:inherit;background:var(--wh);max-width:110px">
+    <option value="" ${!val?'selected':''}>未設定</option>
+    ${opts}${customOpt}
+    <option value="__other__">その他（入力）</option>
+  </select>`;
+}
+function onVarietySelectChange(sel,id){
+  const f=fields.find(x=>x.id===id); if(!f)return;
+  let newVal=sel.value;
+  if(newVal==='__other__'){
+    const input=prompt('品種名を入力してください', f.variety||'');
+    if(input===null){ renderTable(); return; } // キャンセル
+    newVal=input.trim();
+  }
+  f.variety=newVal;
+  saveToDB(f).then(()=>{ renderTable(); renderSide(); renderLayers(); updateVarietyLegend(); }).catch(e=>showToast('⚠ 保存失敗'));
+}
+function statusSelectCell(id, status){
+  const scMap={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882',abandoned:'#9E9E9E'};
+  const opts=Object.keys(SL).map(k=>`<option value="${k}" ${status===k?'selected':''}>${SL[k]}</option>`).join('');
+  const col=scMap[status]||'#6A9B8A';
+  return `<select onclick="event.stopPropagation()" onchange="event.stopPropagation();onStatusSelectChange(this,${id})" style="font-size:10px;padding:2px 4px;border-radius:4px;border:1px solid ${col};color:${col};background:${col}15;font-family:inherit;font-weight:600">${opts}</select>`;
+}
+function onStatusSelectChange(sel,id){
+  setFieldStatus(id, sel.value);
+}
 function inlineDateCell(id, field, val){
   const display = val ? fmt(val) : `<span style="color:#ccc;font-size:10px">—</span>`;
   return `<span class="inline-cell" onclick="event.stopPropagation();startInlineDateEdit(this,${id},'${field}','${val||''}')" title="タップして編集" style="cursor:pointer;display:block;min-width:40px;padding:2px 4px;border-radius:4px;border:1px solid transparent" onmouseover="this.style.borderColor='var(--gp)'" onmouseout="this.style.borderColor='transparent'">${display}</span>`;
@@ -1542,16 +1580,16 @@ function renderTable(){
       <td class="tname" onclick="focusField(${f.id})" style="cursor:pointer">${f.name}</td>
       <td>${hasEmaff(f.emaffArea)?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
       <td>${inlineCell(f.id,'district',f.district,'地区名')}</td>
-      <td>${inlineCell(f.id,'variety',f.variety,'品種')}</td>
+      <td>${inlineVarietyCell(f.id,f.variety)}</td>
       <td style="white-space:nowrap">${planActualCell(planDates.seedDate||f.seedDate, f.actualSeedDate)}</td>
       <td style="white-space:nowrap">${planActualCell(f.plantDate, f.actualPlantDate)}</td>
       <td style="white-space:nowrap;color:#C4A882;font-size:11px">${planDates.youngSpike?fmt(planDates.youngSpike):'—'}</td>
-      <td style="white-space:nowrap">${planActualCell(planDates.topdress, f.actualTopdressDate)}</td>
+      <td style="white-space:nowrap">${f.ippatsuZai?'<span style="font-size:10px;color:var(--gl);background:rgba(106,155,138,.12);padding:2px 6px;border-radius:4px">🌾 一発剤</span>':planActualCell(planDates.topdress, f.actualTopdressDate)}</td>
       <td style="white-space:nowrap">${planActualCell(planDates.headingDate, f.actualHeadingDate)}</td>
       <td style="white-space:nowrap">${planActualCell(planDates.spray1, f.actualSpray1Date)}</td>
       <td style="white-space:nowrap">${planActualCell(planDates.spray2, f.actualSpray2Date)}</td>
       <td style="white-space:nowrap">${planActualCell(f.harvestDate||planDates.harvestCalc, f.actualHarvestDate)}</td>
-      <td><span style="background:${sc2[f.status]}22;color:${sc2[f.status]};padding:2px 6px;border-radius:4px;font-size:10px">${SL[f.status]}</span></td>
+      <td>${statusSelectCell(f.id,f.status)}</td>
       <td><button onclick="event.stopPropagation();openEdit(${f.id})" style="padding:3px 8px;border-radius:5px;border:1px solid var(--cd);background:var(--cr);font-size:10px;cursor:pointer;font-family:inherit">詳細</button></td>
     </tr>`;
   });
@@ -1590,6 +1628,8 @@ function openEdit(id){
   document.getElementById('f-seed').value=f.seedDate||'';
   document.getElementById('f-plant').value=f.plantDate||'';
   document.getElementById('f-harvest').value=f.harvestDate||'';
+  document.getElementById('f-ippatsu').checked=!!f.ippatsuZai;
+  document.getElementById('f-ippatsu-wrap').classList.toggle('checked',!!f.ippatsuZai);
   document.getElementById('f-memo').value=f.memo||'';
   document.getElementById('f-actual-seed').value=f.actualSeedDate||'';
   document.getElementById('f-actual-plant').value=f.actualPlantDate||'';
@@ -1646,6 +1686,8 @@ function clearForm(){
   document.getElementById('f-variety').value='';
   const vo=document.getElementById('f-variety-other'); if(vo)vo.style.display='none';
   ['ck-paid','ck-cont','ck-renew','ck-contact','ck-gift'].forEach(id=>{document.getElementById(id).checked=false});
+  document.getElementById('f-ippatsu').checked=false;
+  document.getElementById('f-ippatsu-wrap').classList.remove('checked');
   syncChecks(); rentMethod=''; renderRentMethod(); giftYears=[]; renderGiftYears();
   document.getElementById('pgrid').innerHTML='';
 }
@@ -1701,6 +1743,11 @@ function syncChecks(){
     document.getElementById('ck-'+k+'-wrap').classList.toggle('checked',el.checked);
   });
 }
+function onIppatsuChange(){
+  const el=document.getElementById('f-ippatsu');
+  document.getElementById('f-ippatsu-wrap').classList.toggle('checked',el.checked);
+  calcPlan(); // 栽培計画タブが開いていれば追肥行の表示にも反映
+}
 function toggleRentMethod(btn){
   const v=btn.dataset.val;
   rentMethod=rentMethod===v?'':v;
@@ -1736,6 +1783,7 @@ function saveField(){
     district:v('f-district'),
     status:document.getElementById('f-status').value,
     seedDate:v('f-seed'), plantDate:v('f-plant'), harvestDate:v('f-harvest'),
+    ippatsuZai:document.getElementById('f-ippatsu').checked,
     memo:v('f-memo'), photos:pendingPhotos,
     ckPaid:document.getElementById('ck-paid').checked,
     ckCont:document.getElementById('ck-cont').checked,
@@ -1856,12 +1904,14 @@ function generateReminders(){
     const defs=[
       {label:'種まき',       icon:'🌱', planned:pd.seedDate||f.seedDate, actual:f.actualSeedDate},
       {label:'田植え',       icon:'🌿', planned:f.plantDate,             actual:f.actualPlantDate},
-      {label:'追肥',         icon:'💊', planned:pd.topdress,             actual:f.actualTopdressDate},
       {label:'出穂期の確認', icon:'🌸', planned:pd.headingDate,          actual:f.actualHeadingDate},
       {label:'防除1回目',    icon:'🚁', planned:pd.spray1,               actual:f.actualSpray1Date},
       {label:'防除2回目',    icon:'🚁', planned:pd.spray2,               actual:f.actualSpray2Date},
       {label:'収穫',         icon:'🏮', planned:f.harvestDate||pd.harvestCalc, actual:f.actualHarvestDate},
     ];
+    if(!f.ippatsuZai){
+      defs.push({label:'追肥', icon:'💊', planned:pd.topdress, actual:f.actualTopdressDate});
+    }
     defs.forEach(d=>{
       if(!d.planned||d.actual) return;
       const pDate=new Date(d.planned); pDate.setHours(0,0,0,0);
