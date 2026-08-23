@@ -317,9 +317,15 @@ textarea{resize:vertical;min-height:56px}
     <span style="margin-left:auto;font-size:11px;color:var(--su)" id="lcount"></span>
     <button class="btn btn-earth" onclick="startDraw()">＋ 圃場を描く</button>
   </div>
+  <div class="ltbar" id="bulk-bar" style="display:none;background:rgba(44,74,62,.06);border-bottom:1px solid var(--cd)">
+    <span style="font-size:12px;color:var(--gd);font-weight:700"><span id="bulk-count">0</span>筆 選択中</span>
+    <button class="btn btn-earth" onclick="openBatchHarvest()">🌾 まとめて収穫記録</button>
+    <button class="btn btn-outline" onclick="clearBulkSelection()">選択解除</button>
+  </div>
   <div class="ltable-wrap">
     <table>
       <thead><tr>
+        <th style="width:26px"><input type="checkbox" id="bulk-select-all" onclick="toggleSelectAll(this)"></th>
         <th onclick="sortBy('name')">圃場名</th>
         <th onclick="sortBy('area')">面積(a)</th>
         <th onclick="sortBy('district')">地区名</th>
@@ -640,6 +646,29 @@ textarea{resize:vertical;min-height:56px}
       <button class="btn btn-danger" id="mbtn-del" style="display:none;margin-right:auto" onclick="deleteField()">🗑 削除</button>
       <button class="btn btn-outline" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-green" onclick="saveField()">保存する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== BATCH HARVEST ====== -->
+<div class="overlay hide" id="batch-harvest-overlay">
+  <div class="modal" style="max-width:520px">
+    <div class="mhd">
+      <div style="font-weight:700;font-size:15px;color:var(--gd)">🌾 まとめて収穫記録</div>
+      <button class="mclose" onclick="closeBatchHarvest()">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="font-size:11px;color:var(--su);margin-bottom:10px">選択した圃場に、面積の比率に応じて合計俵数を自動配分します。</div>
+      <div id="batch-field-list" style="margin-bottom:14px"></div>
+      <div class="fg" style="margin-bottom:12px">
+        <label>合計収穫俵数（俵）</label>
+        <input type="number" id="batch-total-hyo" placeholder="例: 45" step="0.1" oninput="previewBatchAllocation()">
+      </div>
+      <div id="batch-preview"></div>
+    </div>
+    <div class="mft">
+      <button class="btn btn-outline" onclick="closeBatchHarvest()">キャンセル</button>
+      <button class="btn btn-green" onclick="applyBatchHarvest()">この配分を反映する</button>
     </div>
   </div>
 </div>
@@ -1569,7 +1598,7 @@ function renderTable(){
   document.getElementById('lcount').textContent=data.length+'筆';
   const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882',abandoned:'#9E9E9E'};
   if(!data.length){
-    document.getElementById('ltbody').innerHTML='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
+    document.getElementById('ltbody').innerHTML='<tr><td colspan="15" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
     return;
   }
 
@@ -1591,7 +1620,7 @@ function renderTable(){
     if(area!==lastArea){
       const g=groups[area];
       html+=`<tr>
-        <td colspan="12" style="background:#2C4A3E;color:#fff;padding:0;position:sticky;top:32px;z-index:2">
+        <td colspan="15" style="background:#2C4A3E;color:#fff;padding:0;position:sticky;top:32px;z-index:2">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px">
             <span style="font-size:13px;font-weight:700;letter-spacing:.06em">📍 ${area}</span>
             <span style="font-size:11px;opacity:.85;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:20px">${g.count}筆 &nbsp;|&nbsp; ${g.ha.toFixed(2)} ha</span>
@@ -1605,6 +1634,7 @@ function renderTable(){
     // 栽培計画日程を計算して表示
     const planDates = calcPlanDates(f);
     html+=`<tr class="${selId===f.id?'sel':''}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="bulk-check" data-id="${f.id}" onclick="updateBulkBar()"></td>
       <td class="tname" onclick="focusField(${f.id})" style="cursor:pointer">${f.name}</td>
       <td>${hasEmaff(f.emaffArea)?f.emaffArea+'<span style="font-size:9px;color:#6A9B8A"> eMAFF</span>':aA+'<span style="font-size:9px;color:#aaa"> 概算</span>'}</td>
       <td>${inlineCell(f.id,'district',f.district,'地区名')}</td>
@@ -1622,6 +1652,8 @@ function renderTable(){
     </tr>`;
   });
   document.getElementById('ltbody').innerHTML=html;
+  const bb=document.getElementById('bulk-bar'); if(bb) bb.style.display='none';
+  const sa=document.getElementById('bulk-select-all'); if(sa) sa.checked=false;
 }
 function sortBy(k){sortKey===k?sortDir*=-1:(sortKey=k,sortDir=1);renderTable()}
 
@@ -1795,6 +1827,104 @@ function updateYieldPerTan(){
   const perTan=yieldHyo/(areaA/10); // 1反=10a
   disp.textContent=perTan.toFixed(2)+' 俵/反';
 }
+
+// ============================================================
+//  一括収穫記録（複数圃場をまとめて収穫した場合の按分計算）
+// ============================================================
+function fieldAreaA(f){
+  if(hasEmaff(f.emaffArea)) return parseFloat(f.emaffArea);
+  if(f.latlngs) return calcArea(f.latlngs)/100;
+  return NaN;
+}
+function getSelectedFieldIds(){
+  return Array.from(document.querySelectorAll('.bulk-check:checked')).map(el=>parseInt(el.dataset.id));
+}
+function updateBulkBar(){
+  const count=getSelectedFieldIds().length;
+  const bar=document.getElementById('bulk-bar');
+  document.getElementById('bulk-count').textContent=count;
+  bar.style.display=count>0?'flex':'none';
+}
+function toggleSelectAll(cb){
+  document.querySelectorAll('.bulk-check').forEach(el=>{el.checked=cb.checked;});
+  updateBulkBar();
+}
+function clearBulkSelection(){
+  document.querySelectorAll('.bulk-check').forEach(el=>{el.checked=false;});
+  document.getElementById('bulk-select-all').checked=false;
+  updateBulkBar();
+}
+function openBatchHarvest(){
+  const ids=getSelectedFieldIds();
+  if(ids.length<1){ showToast('⚠ 圃場を選択してください'); return; }
+  const list=document.getElementById('batch-field-list');
+  const selected=ids.map(id=>fields.find(f=>f.id===id)).filter(Boolean);
+  list.innerHTML=selected.map(f=>{
+    const a=fieldAreaA(f);
+    return `<div style="display:flex;justify-content:space-between;padding:6px 10px;border:1px solid var(--cd);border-radius:6px;margin-bottom:4px;font-size:12px">
+      <span style="font-weight:600;color:var(--gd)">${f.name}</span>
+      <span style="color:${isNaN(a)?'#E74C3C':'var(--su)'}">${isNaN(a)?'⚠ 面積不明':a.toFixed(2)+' a'}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('batch-total-hyo').value='';
+  document.getElementById('batch-preview').innerHTML='';
+  document.getElementById('batch-harvest-overlay').classList.remove('hide');
+}
+function closeBatchHarvest(){
+  document.getElementById('batch-harvest-overlay').classList.add('hide');
+}
+function computeBatchAllocation(){
+  const ids=getSelectedFieldIds();
+  const selected=ids.map(id=>fields.find(f=>f.id===id)).filter(Boolean);
+  const total=parseFloat(document.getElementById('batch-total-hyo').value);
+  if(!selected.length||isNaN(total)||total<=0) return null;
+  const areas=selected.map(f=>fieldAreaA(f));
+  const knownAreas=areas.filter(a=>!isNaN(a)&&a>0);
+  const avgArea=knownAreas.length?knownAreas.reduce((s,a)=>s+a,0)/knownAreas.length:1;
+  const effAreas=areas.map(a=>(isNaN(a)||a<=0)?avgArea:a);
+  const sumArea=effAreas.reduce((s,a)=>s+a,0);
+  return selected.map((f,i)=>({
+    field:f,
+    area:effAreas[i],
+    estimated: isNaN(areas[i])||areas[i]<=0,
+    allocated: sumArea>0 ? total*(effAreas[i]/sumArea) : 0,
+  }));
+}
+function previewBatchAllocation(){
+  const rows=computeBatchAllocation();
+  const box=document.getElementById('batch-preview');
+  if(!rows){ box.innerHTML=''; return; }
+  let html='<div style="font-size:10px;font-weight:700;color:var(--su);margin-bottom:6px;text-transform:uppercase">配分プレビュー（面積比）</div>';
+  rows.forEach(r=>{
+    html+=`<div style="display:flex;justify-content:space-between;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--cd)">
+      <span>${r.field.name}${r.estimated?' <span style="font-size:9px;color:#E74C3C">(面積不明・平均で概算)</span>':''}</span>
+      <span style="font-weight:700;color:var(--gd)">${r.allocated.toFixed(2)} 俵</span>
+    </div>`;
+  });
+  box.innerHTML=html;
+}
+function applyBatchHarvest(){
+  const rows=computeBatchAllocation();
+  if(!rows){ showToast('⚠ 合計俵数を入力してください'); return; }
+  const total=parseFloat(document.getElementById('batch-total-hyo').value);
+  const names=rows.map(r=>r.field.name).join('・');
+  const promises=rows.map(r=>{
+    const f=r.field;
+    f.harvestYieldKg=r.allocated.toFixed(2);
+    const note=`🔗 合同収穫（${names} / 合計${total}俵を面積按分）`;
+    f.harvestNote = f.harvestNote ? f.harvestNote+'\n'+note : note;
+    return saveToDB(f);
+  });
+  Promise.all(promises)
+    .then(()=>{
+      showToast('✓ '+rows.length+'筆に収穫結果を反映しました');
+      closeBatchHarvest();
+      clearBulkSelection();
+      loadFromDB();
+    })
+    .catch(e=>showToast('⚠ 保存に失敗しました: '+e.message));
+}
+
 function toggleRentMethod(btn){
   const v=btn.dataset.val;
   rentMethod=rentMethod===v?'':v;
