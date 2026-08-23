@@ -429,6 +429,28 @@ textarea{resize:vertical;min-height:56px}
           </div>
         </div>
         <div class="fsec">
+          <div class="fsec-title">🌾 収穫結果</div>
+          <div class="frow c2">
+            <div class="fg"><label>総収穫俵数（俵）</label><input type="number" id="f-harvest-yield" placeholder="例: 8.5" step="0.1" oninput="updateYieldPerTan()"></div>
+            <div class="fg"><label>反収（俵/反・自動計算）</label><div id="yield-per-tan-disp" class="area-disp" style="margin-bottom:0;font-size:12px;padding:6px 8px">—</div></div>
+          </div>
+          <div class="frow c2">
+            <div class="fg"><label>等級</label>
+              <select id="f-harvest-grade">
+                <option value="">-- 選択 --</option>
+                <option value="1等">1等</option>
+                <option value="2等">2等</option>
+                <option value="3等">3等</option>
+                <option value="規格外">規格外</option>
+                <option value="未検査">未検査</option>
+              </select>
+            </div>
+          </div>
+          <div class="frow c1">
+            <div class="fg"><label>収穫時メモ（倒伏・病害虫・天候など）</label><textarea id="f-harvest-note" placeholder="例: 台風の影響で一部倒伏あり。天候良好で順調に収穫。"></textarea></div>
+          </div>
+        </div>
+        <div class="fsec">
           <div class="fsec-title">メモ・写真</div>
           <div class="frow c1"><div class="fg"><label>メモ</label><textarea id="f-memo" placeholder="排水状況、土質、作業メモなど…"></textarea></div></div>
           <div class="fg"><label>写真</label>
@@ -716,6 +738,9 @@ function rowToField(r){
     actualTopdressDate: r.actual_topdress_date||'',
     customColor: r.custom_color||null,
     ippatsuZai: !!r.ippatsu_zai,
+    harvestYieldKg: (r.harvest_yield_kg===null||r.harvest_yield_kg===undefined)?'':r.harvest_yield_kg,
+    harvestGrade: r.harvest_grade||'',
+    harvestNote: r.harvest_note||'',
   };
 }
 
@@ -766,6 +791,9 @@ function fieldToRow(f){
     actual_topdress_date: f.actualTopdressDate||null,
     custom_color: f.customColor||null,
     ippatsu_zai: !!f.ippatsuZai,
+    harvest_yield_kg: (function(){const v=parseFloat(f.harvestYieldKg); return isNaN(v)?null:v;})(),
+    harvest_grade: f.harvestGrade||null,
+    harvest_note: f.harvestNote||null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -1630,6 +1658,9 @@ function openEdit(id){
   document.getElementById('f-harvest').value=f.harvestDate||'';
   document.getElementById('f-ippatsu').checked=!!f.ippatsuZai;
   document.getElementById('f-ippatsu-wrap').classList.toggle('checked',!!f.ippatsuZai);
+  document.getElementById('f-harvest-yield').value=(f.harvestYieldKg!==undefined&&f.harvestYieldKg!==null&&f.harvestYieldKg!=='')?f.harvestYieldKg:'';
+  document.getElementById('f-harvest-grade').value=f.harvestGrade||'';
+  document.getElementById('f-harvest-note').value=f.harvestNote||'';
   document.getElementById('f-memo').value=f.memo||'';
   document.getElementById('f-actual-seed').value=f.actualSeedDate||'';
   document.getElementById('f-actual-plant').value=f.actualPlantDate||'';
@@ -1641,6 +1672,7 @@ function openEdit(id){
   const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'—');
   document.getElementById('area-disp').textContent=aA+' a（描画）';
   document.getElementById('f-emaff-area').value=hasEmaff(f.emaffArea)?f.emaffArea:'';
+  updateYieldPerTan();
   // owner tab
   document.getElementById('ck-paid').checked=!!f.ckPaid;
   document.getElementById('ck-cont').checked=!!f.ckCont;
@@ -1678,10 +1710,12 @@ function closeModal(){
 }
 function clearForm(){
   ['f-name','f-lot','f-district','f-owner','f-variety-other','f-seed','f-plant','f-harvest','f-memo','f-emaff-area',
+   'f-harvest-yield','f-harvest-grade','f-harvest-note',
    'o-name','o-kana','o-tel1','o-tel2','o-addr','o-rel','o-rent','o-renttime','o-rentmemo',
    'o-cstart','o-cend','o-crenew','o-intention','o-gift'].forEach(id=>{
     const el=document.getElementById(id); if(el)el.value='';
   });
+  document.getElementById('yield-per-tan-disp').textContent='—';
   document.getElementById('f-status').value='unstarted';
   document.getElementById('f-variety').value='';
   const vo=document.getElementById('f-variety-other'); if(vo)vo.style.display='none';
@@ -1748,6 +1782,19 @@ function onIppatsuChange(){
   document.getElementById('f-ippatsu-wrap').classList.toggle('checked',el.checked);
   calcPlan(); // 栽培計画タブが開いていれば追肥行の表示にも反映
 }
+function updateYieldPerTan(){
+  const disp=document.getElementById('yield-per-tan-disp');
+  const yieldHyo=parseFloat(document.getElementById('f-harvest-yield').value);
+  if(isNaN(yieldHyo)){ disp.textContent='—'; return; }
+  let areaA=parseFloat(document.getElementById('f-emaff-area').value);
+  if(isNaN(areaA)){
+    const f=fields.find(x=>x.id===editingId);
+    areaA=(f&&f.latlngs)?(calcArea(f.latlngs)/100):NaN;
+  }
+  if(isNaN(areaA)||areaA<=0){ disp.textContent='面積未入力'; return; }
+  const perTan=yieldHyo/(areaA/10); // 1反=10a
+  disp.textContent=perTan.toFixed(2)+' 俵/反';
+}
 function toggleRentMethod(btn){
   const v=btn.dataset.val;
   rentMethod=rentMethod===v?'':v;
@@ -1784,6 +1831,7 @@ function saveField(){
     status:document.getElementById('f-status').value,
     seedDate:v('f-seed'), plantDate:v('f-plant'), harvestDate:v('f-harvest'),
     ippatsuZai:document.getElementById('f-ippatsu').checked,
+    harvestYieldKg:v('f-harvest-yield'), harvestGrade:v('f-harvest-grade'), harvestNote:v('f-harvest-note'),
     memo:v('f-memo'), photos:pendingPhotos,
     ckPaid:document.getElementById('ck-paid').checked,
     ckCont:document.getElementById('ck-cont').checked,
