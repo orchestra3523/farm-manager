@@ -338,6 +338,7 @@ textarea{resize:vertical;min-height:56px}
         <th>🚁防除1</th>
         <th>🚁防除2</th>
         <th onclick="sortBy('harvestDate')">🏮収穫目安</th>
+        <th onclick="sortBy('harvestYieldKg')">🌾収穫俵数</th>
         <th>状況</th>
         <th></th>
       </tr></thead>
@@ -1520,6 +1521,14 @@ function onVarietySelectChange(sel,id){
   f.variety=newVal;
   saveToDB(f).then(()=>{ renderTable(); renderSide(); renderLayers(); updateVarietyLegend(); }).catch(e=>showToast('⚠ 保存失敗'));
 }
+function yieldCell(f){
+  if(!hasEmaff(f.harvestYieldKg)) return '<span style="color:#ccc;font-size:10px">—</span>';
+  const y=parseFloat(f.harvestYieldKg);
+  if(isNaN(y)) return '<span style="color:#ccc;font-size:10px">—</span>';
+  const a=fieldAreaA(f);
+  const perTan=(!isNaN(a)&&a>0)?(y/(a/10)).toFixed(2)+' 俵/反':'';
+  return `<div style="line-height:1.3"><span style="font-weight:700;color:var(--gd);font-size:12px">${y}俵</span>${perTan?`<div style="font-size:10px;color:var(--su)">${perTan}</div>`:''}</div>`;
+}
 function statusSelectCell(id, status){
   const scMap={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882',abandoned:'#9E9E9E'};
   const opts=Object.keys(SL).map(k=>`<option value="${k}" ${status===k?'selected':''}>${SL[k]}</option>`).join('');
@@ -1584,7 +1593,7 @@ function renderTable(){
   if(sortKey){
     data=[...data].sort((a,b)=>{
       let va=a[sortKey]||'',vb=b[sortKey]||'';
-      if(sortKey==='area'){va=parseFloat(va)||0;vb=parseFloat(vb)||0}
+      if(sortKey==='area'||sortKey==='harvestYieldKg'){va=parseFloat(va)||0;vb=parseFloat(vb)||0}
       return va<vb?-sortDir:va>vb?sortDir:0;
     });
   }
@@ -1598,7 +1607,7 @@ function renderTable(){
   document.getElementById('lcount').textContent=data.length+'筆';
   const sc2={unstarted:'#6A9B8A',planted:'#2C4A3E',harvested:'#C4A882',abandoned:'#9E9E9E'};
   if(!data.length){
-    document.getElementById('ltbody').innerHTML='<tr><td colspan="15" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
+    document.getElementById('ltbody').innerHTML='<tr><td colspan="16" style="text-align:center;padding:24px;color:var(--su)">該当する圃場がありません</td></tr>';
     return;
   }
 
@@ -1620,7 +1629,7 @@ function renderTable(){
     if(area!==lastArea){
       const g=groups[area];
       html+=`<tr>
-        <td colspan="15" style="background:#2C4A3E;color:#fff;padding:0;position:sticky;top:32px;z-index:2">
+        <td colspan="16" style="background:#2C4A3E;color:#fff;padding:0;position:sticky;top:32px;z-index:2">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px">
             <span style="font-size:13px;font-weight:700;letter-spacing:.06em">📍 ${area}</span>
             <span style="font-size:11px;opacity:.85;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:20px">${g.count}筆 &nbsp;|&nbsp; ${g.ha.toFixed(2)} ha</span>
@@ -1647,6 +1656,7 @@ function renderTable(){
       <td style="white-space:nowrap">${planActualCell(planDates.spray1, f.actualSpray1Date)}</td>
       <td style="white-space:nowrap">${planActualCell(planDates.spray2, f.actualSpray2Date)}</td>
       <td style="white-space:nowrap">${planActualCell(f.harvestDate||planDates.harvestCalc, f.actualHarvestDate)}</td>
+      <td style="white-space:nowrap">${yieldCell(f)}</td>
       <td>${statusSelectCell(f.id,f.status)}</td>
       <td><button onclick="event.stopPropagation();openEdit(${f.id})" style="padding:3px 8px;border-radius:5px;border:1px solid var(--cd);background:var(--cr);font-size:10px;cursor:pointer;font-family:inherit">詳細</button></td>
     </tr>`;
@@ -1742,6 +1752,7 @@ function closeModal(){
 }
 function clearForm(){
   ['f-name','f-lot','f-district','f-owner','f-variety-other','f-seed','f-plant','f-harvest','f-memo','f-emaff-area',
+   'f-actual-seed','f-actual-plant','f-actual-heading','f-actual-harvest','f-actual-spray1','f-actual-spray2','f-actual-topdress',
    'f-harvest-yield','f-harvest-grade','f-harvest-note',
    'o-name','o-kana','o-tel1','o-tel2','o-addr','o-rel','o-rent','o-renttime','o-rentmemo',
    'o-cstart','o-cend','o-crenew','o-intention','o-gift'].forEach(id=>{
@@ -1960,6 +1971,10 @@ function saveField(){
     district:v('f-district'),
     status:document.getElementById('f-status').value,
     seedDate:v('f-seed'), plantDate:v('f-plant'), harvestDate:v('f-harvest'),
+    actualSeedDate:v('f-actual-seed'), actualPlantDate:v('f-actual-plant'),
+    actualHeadingDate:v('f-actual-heading'), actualHarvestDate:v('f-actual-harvest'),
+    actualSpray1Date:v('f-actual-spray1'), actualSpray2Date:v('f-actual-spray2'),
+    actualTopdressDate:v('f-actual-topdress'),
     ippatsuZai:document.getElementById('f-ippatsu').checked,
     harvestYieldKg:v('f-harvest-yield'), harvestGrade:v('f-harvest-grade'), harvestNote:v('f-harvest-note'),
     memo:v('f-memo'), photos:pendingPhotos,
