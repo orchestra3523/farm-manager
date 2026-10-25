@@ -244,6 +244,7 @@ textarea{resize:vertical;min-height:56px}
   </div>
   <div class="hbtns">
     <button class="btn btn-ghost" id="reminder-btn" onclick="openReminders()" title="やること" style="position:relative">🔔<span id="reminder-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#E74C3C;color:#fff;border-radius:10px;font-size:9px;padding:1px 5px;min-width:15px;text-align:center;line-height:14px;font-weight:700">0</span></button>
+    <button class="btn btn-ghost" onclick="backupAll()" title="全データをCSVで保存">💾 バックアップ</button>
     <button class="btn btn-ghost" onclick="exportCSV()">📥 CSV</button>
     <button class="btn btn-ghost" onclick="document.getElementById('kml-input').click()" title="GoogleマイマップからKMLをインポート">🗂 KML読込</button>
     <input type="file" id="kml-input" accept=".kml,.kmz" style="display:none" onchange="importKML(event)">
@@ -438,7 +439,7 @@ textarea{resize:vertical;min-height:56px}
         <div class="fsec">
           <div class="fsec-title">🌾 収穫結果</div>
           <div class="frow c2">
-            <div class="fg"><label>総収穫俵数（俵）</label><input type="number" id="f-harvest-yield" placeholder="例: 8.5" step="0.1" oninput="updateYieldPerTan()"></div>
+            <div class="fg"><label>総収穫俵数（俵）</label><input type="text" inputmode="decimal" id="f-harvest-yield" placeholder="例: 8.5　（わからないときは ？）" oninput="updateYieldPerTan()"></div>
             <div class="fg"><label>反収（俵/反・自動計算）</label><div id="yield-per-tan-disp" class="area-disp" style="margin-bottom:0;font-size:12px;padding:6px 8px">—</div></div>
           </div>
           <div class="frow c2">
@@ -686,6 +687,10 @@ textarea{resize:vertical;min-height:56px}
 </div>
 
 <div class="toast" id="toast"></div>
+<div id="err-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#b91c1c;color:#fff;padding:12px 14px;font-size:14px;font-weight:700;align-items:center;gap:12px;box-shadow:0 2px 10px rgba(0,0,0,.3)">
+  <span id="err-banner-msg" style="flex:1;line-height:1.5;word-break:break-all"></span>
+  <button onclick="closeError()" style="background:#fff;color:#b91c1c;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer;white-space:nowrap">閉じる</button>
+</div>
 
 <script>
 // ============================================================
@@ -722,7 +727,7 @@ async function supaFetch(path, options={}, _retryCount){
         const bodyObj=JSON.parse(options.body);
         if(Array.isArray(bodyObj)) bodyObj.forEach(o=>{delete o[col];});
         else delete bodyObj[col];
-        showToast('⚠ 「'+col+'」はデータベース未設定のためスキップして保存しました');
+        showToast('⚠ 「'+col+'」の列がデータベースにないため、この項目は保存されていません。画面を開き直すと消えます。作者に連絡してください');
         return supaFetch(path, {...options, body:JSON.stringify(bodyObj)}, _retryCount+1);
       }catch(e){ /* 復旧できなければ通常のエラーとして処理 */ }
     }
@@ -785,6 +790,7 @@ function rowToField(r){
     harvestYieldKg: (r.harvest_yield_kg===null||r.harvest_yield_kg===undefined)?'':r.harvest_yield_kg,
     harvestGrade: r.harvest_grade||'',
     harvestNote: r.harvest_note||'',
+    harvestUnknown: !!r.harvest_unknown,
   };
 }
 
@@ -838,6 +844,7 @@ function fieldToRow(f){
     harvest_yield_kg: (function(){const v=parseFloat(f.harvestYieldKg); return isNaN(v)?null:v;})(),
     harvest_grade: f.harvestGrade||null,
     harvest_note: f.harvestNote||null,
+    harvest_unknown: !!f.harvestUnknown,
     updated_at: new Date().toISOString(),
   };
 }
@@ -1536,7 +1543,7 @@ function onVarietySelectChange(sel,id){
   saveToDB(f).then(()=>{ renderTable(); renderSide(); renderLayers(); updateVarietyLegend(); }).catch(e=>showToast('⚠ 保存失敗'));
 }
 function yieldCell(f){
-  if(!hasEmaff(f.harvestYieldKg)) return '<span style="color:#ccc;font-size:10px">—</span>';
+  if(!hasEmaff(f.harvestYieldKg)) return f.harvestUnknown?'<span style="color:#C0392B;font-weight:700;font-size:13px" title="収穫量不明">？</span>':'<span style="color:#ccc;font-size:10px">—</span>';
   const y=parseFloat(f.harvestYieldKg);
   if(isNaN(y)) return '<span style="color:#ccc;font-size:10px">—</span>';
   const a=fieldAreaA(f);
@@ -1714,7 +1721,7 @@ function openEdit(id){
   document.getElementById('f-harvest').value=f.harvestDate||'';
   document.getElementById('f-ippatsu').checked=!!f.ippatsuZai;
   document.getElementById('f-ippatsu-wrap').classList.toggle('checked',!!f.ippatsuZai);
-  document.getElementById('f-harvest-yield').value=(f.harvestYieldKg!==undefined&&f.harvestYieldKg!==null&&f.harvestYieldKg!=='')?f.harvestYieldKg:'';
+  document.getElementById('f-harvest-yield').value=(f.harvestYieldKg!==undefined&&f.harvestYieldKg!==null&&f.harvestYieldKg!=='')?f.harvestYieldKg:(f.harvestUnknown?'？':'');
   document.getElementById('f-harvest-grade').value=f.harvestGrade||'';
   document.getElementById('f-harvest-note').value=f.harvestNote||'';
   document.getElementById('f-memo').value=f.memo||'';
@@ -1990,7 +1997,7 @@ function saveField(){
     actualSpray1Date:v('f-actual-spray1'), actualSpray2Date:v('f-actual-spray2'),
     actualTopdressDate:v('f-actual-topdress'),
     ippatsuZai:document.getElementById('f-ippatsu').checked,
-    harvestYieldKg:v('f-harvest-yield'), harvestGrade:v('f-harvest-grade'), harvestNote:v('f-harvest-note'),
+    harvestYieldKg:(/^[?？]+$/.test(v('f-harvest-yield'))?'':v('f-harvest-yield')), harvestUnknown:/^[?？]+$/.test(v('f-harvest-yield')), harvestGrade:v('f-harvest-grade'), harvestNote:v('f-harvest-note'),
     memo:v('f-memo'), photos:pendingPhotos,
     ckPaid:document.getElementById('ck-paid').checked,
     ckCont:document.getElementById('ck-cont').checked,
@@ -2354,13 +2361,64 @@ function showSideMobile(){
 //  UTILS
 // ============================================================
 function fmt(d){if(!d)return'—';const[,m,day]=d.split('-');return`${parseInt(m)}/${parseInt(day)}`}
-function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}
+function showToast(msg,ms){
+  if(typeof msg==='string' && msg.indexOf('⚠')===0){ showError(msg); return; }
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer=setTimeout(()=>t.classList.remove('show'),ms||2200);
+}
+// 失敗は赤いバナーで出し続ける（閉じるまで消えない）
+function showError(msg){
+  const b=document.getElementById('err-banner'), m=document.getElementById('err-banner-msg');
+  if(!b||!m) return;
+  m.textContent=msg;
+  b.style.display='flex';
+}
+function closeError(){const b=document.getElementById('err-banner'); if(b) b.style.display='none';}
+
+// ============================================================
+//  バックアップ（全項目をCSVで保存）
+// ============================================================
+async function backupAll(){
+  try{
+    showToast('💾 バックアップを作成中…');
+    const rows = await supaFetch('fields?select=*&order=id.asc');
+    if(!rows || !rows.length){ showToast('⚠ データが0件のためバックアップしませんでした'); return; }
+    const cols = [];
+    rows.forEach(r=>Object.keys(r).forEach(k=>{ if(cols.indexOf(k)<0) cols.push(k); }));
+    const esc = x=>{
+      if(x===null||x===undefined) return '';
+      const t = (typeof x==='object') ? JSON.stringify(x) : String(x);
+      return '"'+t.replace(/"/g,'""')+'"';
+    };
+    const csv = '\uFEFF'+[cols.map(esc).join(','), ...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n');
+    const d=new Date(), z=n=>String(n).padStart(2,'0');
+    const stamp=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'_'+z(d.getHours())+z(d.getMinutes());
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    a.download='圃場バックアップ_'+stamp+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    try{ localStorage.setItem('lastBackupAt', String(Date.now())); }catch(e){}
+    showToast('✓ バックアップ保存：'+rows.length+'筆（ダウンロードフォルダを確認）',4500);
+  }catch(e){
+    showToast('⚠ バックアップ失敗: '+e.message);
+  }
+}
+function remindBackup(){
+  try{
+    const last=parseInt(localStorage.getItem('lastBackupAt')||'0');
+    if(!last || Date.now()-last > 7*24*3600*1000){
+      setTimeout(()=>showToast('💾 しばらくバックアップしていません。右上の「💾 バックアップ」を押してください',6000),3500);
+    }
+  }catch(e){}
+}
 
 
 
 window.addEventListener('load',()=>{
   // Supabaseからデータ読み込み（初回のみ地図リセット）
   loadFromDB(true);
+  remindBackup();
 });
 window.addEventListener('resize',()=>map.invalidateSize());
 </script>
