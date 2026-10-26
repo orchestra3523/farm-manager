@@ -261,6 +261,10 @@ textarea{resize:vertical;min-height:56px}
   <div class="sep"></div>
   <div class="stat"><span class="stn" id="sn-harvested">0</span><span class="stu">筆</span><span class="stl">　収穫済</span></div>
   <div class="sep"></div>
+  <div class="stat"><span class="stn" id="sn-yield">0</span><span class="stu">俵</span><span class="stl">　収穫計</span></div>
+  <div class="sep"></div>
+  <div class="stat"><span class="stn" id="sn-pertan">—</span><span class="stu">俵/反</span><span class="stl">　平均反収</span></div>
+  <div class="sep"></div>
   <div class="stat"><span class="stn" id="sn-unpaid">0</span><span class="stu">筆</span><span class="stl">　賃料未払い</span></div>
 </div>
 
@@ -1636,7 +1640,8 @@ function renderTable(){
   const groups={};
   data.forEach(f=>{
     const area=getAreaName(f);
-    if(!groups[area]) groups[area]={count:0,ha:0};
+    if(!groups[area]) groups[area]={count:0,ha:0,fs:[]};
+    groups[area].fs.push(f);
     const aA=f.latlngs?(calcArea(f.latlngs)/100).toFixed(1):(f.area||'0');
     const dispArea=hasEmaff(f.emaffArea)?parseFloat(f.emaffArea):parseFloat(aA)||0;
     groups[area].count++;
@@ -1653,7 +1658,7 @@ function renderTable(){
         <td colspan="16" style="background:#2C4A3E;color:#fff;padding:0;position:sticky;top:32px;z-index:2">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px">
             <span style="font-size:13px;font-weight:700;letter-spacing:.06em">📍 ${area}</span>
-            <span style="font-size:11px;opacity:.85;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:20px">${g.count}筆 &nbsp;|&nbsp; ${g.ha.toFixed(2)} ha</span>
+            <span style="font-size:11px;opacity:.85;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:20px">${g.count}筆 &nbsp;|&nbsp; ${g.ha.toFixed(2)} ha${(()=>{const hs=calcHarvestStats(g.fs);return hs.n?` &nbsp;|&nbsp; 🌾 ${hs.tawara.toFixed(1)}俵（${hs.n}筆）${isNaN(hs.perTan)?'':` &nbsp;|&nbsp; 平均 ${hs.perTan.toFixed(2)}俵/反`}`:''})()}</span>
           </div>
         </td>
       </tr>`;
@@ -2082,7 +2087,23 @@ function setF(val,el){
   document.querySelectorAll('.chip').forEach(c=>{if(c.textContent===el.textContent)c.classList.add('on')});
   rerender();
 }
+// 収穫の集計：入力済みの圃場だけで、合計俵数と1反あたり平均（合計俵数÷合計面積×10a）を出す
+function calcHarvestStats(arr){
+  let tawara=0, areaA=0, n=0;
+  arr.forEach(f=>{
+    if(!hasEmaff(f.harvestYieldKg)) return;
+    const y=parseFloat(f.harvestYieldKg); if(isNaN(y)) return;
+    const a=fieldAreaA(f);
+    tawara+=y; n++;
+    if(!isNaN(a)&&a>0) areaA+=a;
+  });
+  return {tawara, areaA, n, perTan: areaA>0 ? tawara/(areaA/10) : NaN};
+}
 function updateStats(){
+  const hs=calcHarvestStats(fields);
+  const _y=document.getElementById('sn-yield'), _p=document.getElementById('sn-pertan');
+  if(_y) _y.textContent=hs.n?hs.tawara.toFixed(1):'0';
+  if(_p) _p.textContent=isNaN(hs.perTan)?'—':hs.perTan.toFixed(2);
   document.getElementById('sn-count').textContent=fields.length;
   // eMAFF面積があればそちらを優先、なければポリゴン計算値を使用
   const tot=fields.reduce((s,f)=>{
