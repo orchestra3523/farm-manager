@@ -185,6 +185,37 @@ textarea{resize:vertical;min-height:56px}
 /* TOAST */
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--gd);color:var(--cr);padding:8px 16px;border-radius:8px;font-size:12px;z-index:9999;opacity:0;transition:opacity .22s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
+/* 印刷レポート */
+#print-root{position:fixed;inset:0;background:#e9e6df;z-index:12000;overflow:auto;color:#1E2E28;font-family:'Noto Sans JP',sans-serif}
+.rp-bar{position:sticky;top:0;background:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #EAE4D8;z-index:2}
+.rp-page{background:#fff;width:277mm;max-width:100%;margin:12px auto;padding:8mm 10mm;box-shadow:0 2px 10px rgba(0,0,0,.15);box-sizing:border-box}
+.rp-page h1{font-size:20px;margin:0 0 4px}.rp-page h2{font-size:16px;margin:0}
+.rp-sub{font-size:12px;color:#5A7068;margin-bottom:14px}
+.rp-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px;border-bottom:2px solid #2C4A3E;padding-bottom:4px}
+.rp-meta{font-size:12px;color:#3D6B5C}
+.rp-mapwrap{position:relative;margin-bottom:8px}
+.rp-map{width:100%;height:92mm;border:1px solid #999}
+.rp-legend{font-size:11px;margin-top:3px;display:flex;gap:12px;flex-wrap:wrap}
+.rp-lg i{display:inline-block;width:11px;height:11px;margin-right:4px;border:1px solid #666;vertical-align:-1px}
+.rp-no{width:20px;height:20px;border-radius:50%;background:#fff;border:1.5px solid #1E2E28;color:#1E2E28;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1}
+.rp-tbl{border-collapse:collapse;width:100%;font-size:11px}
+.rp-tbl th,.rp-tbl td{border:1px solid #888;padding:3px 5px}
+.rp-tbl th{background:#EAE4D8;text-align:center;font-weight:600}
+.rp-tbl tfoot td{font-weight:700;background:#F4F1EA}
+.rp-tbl td.r{text-align:right}.rp-tbl td.c{text-align:center}.rp-tbl td.wr{height:22px}
+.rp-tbl thead{display:table-header-group}.rp-tbl tr{page-break-inside:avoid}
+.rp-note{font-size:10.5px;color:#5A7068;margin-top:8px}
+@media print{
+  @page{size:A4 landscape;margin:8mm}
+  html,body{height:auto!important;overflow:visible!important;display:block!important;background:#fff!important}
+  body.printing > *:not(#print-root){display:none!important}
+  #print-root{position:static!important;overflow:visible!important;background:#fff!important}
+  .no-print{display:none!important}
+  .rp-page{width:auto;margin:0;padding:0;box-shadow:none;page-break-after:always}
+  .rp-page:last-child{page-break-after:auto}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+
 
 /* 現在地ボタン */
 .locate-btn-wrap{margin-bottom:80px !important}
@@ -244,6 +275,7 @@ textarea{resize:vertical;min-height:56px}
   </div>
   <div class="hbtns">
     <button class="btn btn-ghost" id="reminder-btn" onclick="openReminders()" title="やること" style="position:relative">🔔<span id="reminder-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#E74C3C;color:#fff;border-radius:10px;font-size:9px;padding:1px 5px;min-width:15px;text-align:center;line-height:14px;font-weight:700">0</span></button>
+    <button class="btn btn-ghost" onclick="openReportDialog()" title="地区ごとに地図と一覧を印刷">🖨 レポート</button>
     <button class="btn btn-ghost" onclick="backupAll()" title="全データをCSVで保存">💾 バックアップ</button>
     <button class="btn btn-ghost" onclick="exportCSV()">📥 CSV</button>
     <button class="btn btn-ghost" onclick="document.getElementById('kml-input').click()" title="GoogleマイマップからKMLをインポート">🗂 KML読込</button>
@@ -2425,6 +2457,144 @@ async function backupAll(){
     showToast('⚠ バックアップ失敗: '+e.message);
   }
 }
+
+// ============================================================
+//  印刷レポート（地区ごとに 地図＋一覧表 をまとめて印刷）
+// ============================================================
+const _rpMaps=[];
+function _esc(x){return String(x===null||x===undefined?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function openReportDialog(){
+  const groups={};
+  fields.forEach(f=>{const a=getAreaName(f);(groups[a]=groups[a]||[]).push(f);});
+  const names=Object.keys(groups).sort();
+  const old=document.getElementById('rp-dialog'); if(old) old.remove();
+  const d=document.createElement('div');
+  d.id='rp-dialog';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:15000;display:flex;align-items:center;justify-content:center;padding:14px';
+  d.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:520px;width:100%;max-height:90vh;overflow:auto;padding:18px;font-size:13px;color:#1E2E28">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">🖨 レポートを作る（地区ごとに印刷）</div>
+    <div style="font-weight:600;margin:8px 0 4px">印刷する地区</div>
+    <div style="margin-bottom:6px"><button class="btn btn-outline" onclick="document.querySelectorAll('.rp-chk').forEach(c=>c.checked=true)">すべて選ぶ</button>
+    <button class="btn btn-outline" onclick="document.querySelectorAll('.rp-chk').forEach(c=>c.checked=false)">すべて外す</button></div>
+    <div style="max-height:34vh;overflow:auto;border:1px solid #EAE4D8;border-radius:8px;padding:6px 10px">
+      ${names.map((n,i)=>`<label style="display:flex;gap:8px;padding:3px 0;align-items:center"><input type="checkbox" class="rp-chk" value="${_esc(n)}" checked> ${_esc(n)} <span style="color:#5A7068;font-size:11px">（${groups[n].length}筆）</span></label>`).join('')}
+    </div>
+    <div style="font-weight:600;margin:12px 0 4px">内容</div>
+    <label style="display:flex;gap:8px;padding:3px 0"><input type="checkbox" id="rp-opt-summary" checked> 最初に「地区ごとの集計」のページを付ける</label>
+    <label style="display:flex;gap:8px;padding:3px 0"><input type="checkbox" id="rp-opt-map" checked> 地図を付ける</label>
+    <label style="display:flex;gap:8px;padding:3px 0;margin-left:22px">地図の種類：
+      <select id="rp-opt-maptype"><option value="aerial">航空写真</option><option value="std">標準地図</option></select></label>
+    <label style="display:flex;gap:8px;padding:3px 0"><input type="checkbox" id="rp-opt-owner"> 地主名を表に入れる</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-outline" onclick="document.getElementById('rp-dialog').remove()">キャンセル</button>
+      <button class="btn btn-green" onclick="buildReport()">プレビューを開く</button>
+    </div></div>`;
+  document.body.appendChild(d);
+}
+
+function closeReport(){
+  _rpMaps.splice(0).forEach(m=>{try{m.remove()}catch(e){}});
+  const r=document.getElementById('print-root'); if(r) r.remove();
+  document.body.classList.remove('printing');
+}
+
+function buildReport(){
+  const sel=Array.from(document.querySelectorAll('.rp-chk:checked')).map(c=>c.value);
+  const optSummary=document.getElementById('rp-opt-summary').checked;
+  const optMap=document.getElementById('rp-opt-map').checked;
+  const mapType=document.getElementById('rp-opt-maptype').value;
+  const optOwner=document.getElementById('rp-opt-owner').checked;
+  if(!sel.length){ showToast('地区を1つ以上選んでください'); return; }
+  document.getElementById('rp-dialog').remove();
+
+  const groups={};
+  fields.forEach(f=>{const a=getAreaName(f);(groups[a]=groups[a]||[]).push(f);});
+  const names=Object.keys(groups).filter(n=>sel.indexOf(n)>=0).sort();
+  const today=new Date(), ds=today.getFullYear()+'年'+(today.getMonth()+1)+'月'+today.getDate()+'日';
+  const nextY=today.getFullYear()+1;
+  const fmtA=a=>isNaN(a)?'—':a.toFixed(2);
+
+  let html=`<div class="rp-bar no-print">
+      <button class="btn btn-green" onclick="window.print()">🖨 印刷する</button>
+      <button class="btn btn-outline" onclick="closeReport()">✕ 閉じる</button>
+      <span style="font-size:12px;color:#5A7068">※ 印刷の画面で「用紙: A4 / 向き: 横」「背景のグラフィック: ON」にしてください。地図が読み込まれてから印刷してください。</span>
+    </div>`;
+
+  if(optSummary){
+    let tf=0,ta=0;
+    const rowsHtml=names.map(n=>{
+      const g=groups[n]; const ha=g.reduce((s,f)=>{const a=fieldAreaA(f);return s+(isNaN(a)?0:a)},0);
+      const hs=calcHarvestStats(g); tf+=g.length; ta+=ha;
+      return `<tr><td>${_esc(n)}</td><td class="r">${g.length}</td><td class="r">${(ha/100).toFixed(2)}</td><td class="r">${hs.n?hs.tawara.toFixed(1):'—'}</td><td class="r">${hs.n}</td><td class="r">${isNaN(hs.perTan)?'—':hs.perTan.toFixed(2)}</td></tr>`;
+    }).join('');
+    const all=calcHarvestStats(names.flatMap(n=>groups[n]));
+    html+=`<section class="rp-page">
+      <h1>田んぼのオーケストラ　圃場レポート</h1>
+      <div class="rp-sub">作成日 ${ds}　／　${nextY}年の作付け計画用</div>
+      <h2>地区ごとの集計</h2>
+      <table class="rp-tbl"><thead><tr><th>地区</th><th>筆数</th><th>面積(ha)</th><th>今年の収穫計(俵)</th><th>収穫入力あり(筆)</th><th>平均反収(俵/反)</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot><tr><td>合計</td><td class="r">${tf}</td><td class="r">${(ta/100).toFixed(2)}</td><td class="r">${all.n?all.tawara.toFixed(1):'—'}</td><td class="r">${all.n}</td><td class="r">${isNaN(all.perTan)?'—':all.perTan.toFixed(2)}</td></tr></tfoot></table>
+      <div class="rp-note">平均反収＝収穫量を入力した圃場の「合計俵数 ÷ 合計面積 × 10a」。収穫量が未入力・「？」の圃場は含みません。</div>
+    </section>`;
+  }
+
+  names.forEach((n,gi)=>{
+    const g=groups[n].slice().sort((a,b)=>(a.name||'')<(b.name||'')?-1:1);
+    const ha=g.reduce((s,f)=>{const a=fieldAreaA(f);return s+(isNaN(a)?0:a)},0);
+    const hs=calcHarvestStats(g);
+    const vars={};
+    g.forEach(f=>{const c=getFieldColor(f); const v=(f.variety||'未設定'); vars[v]=c.f;});
+    const legend=Object.keys(vars).map(v=>`<span class="rp-lg"><i style="background:${vars[v]}"></i>${_esc(v)}</span>`).join('');
+    const rows=g.map((f,i)=>{
+      const a=fieldAreaA(f);
+      const y=hasEmaff(f.harvestYieldKg)?parseFloat(f.harvestYieldKg):NaN;
+      const yTxt=!isNaN(y)?y.toFixed(1):(f.harvestUnknown?'？':'');
+      const pt=(!isNaN(y)&&!isNaN(a)&&a>0)?(y/(a/10)).toFixed(2):'';
+      return `<tr><td class="c">${i+1}</td><td>${_esc(f.name)}</td><td>${_esc(f.lot)}</td><td class="r">${fmtA(a)}</td><td>${_esc(f.variety)}</td>${optOwner?`<td>${_esc(f.oName)}</td>`:''}<td class="r">${yTxt}</td><td class="r">${pt}</td><td class="wr"></td><td class="wr"></td></tr>`;
+    }).join('');
+    html+=`<section class="rp-page">
+      <div class="rp-head"><h2>📍 ${_esc(n)}</h2>
+        <div class="rp-meta">${g.length}筆 ／ ${(ha/100).toFixed(2)} ha ／ 今年の収穫 ${hs.n?hs.tawara.toFixed(1)+'俵（'+hs.n+'筆入力）':'—'} ／ 平均反収 ${isNaN(hs.perTan)?'—':hs.perTan.toFixed(2)+'俵/反'}</div></div>
+      ${optMap?`<div class="rp-mapwrap"><div class="rp-map" id="rp-map-${gi}"></div><div class="rp-legend">${legend}</div></div>`:''}
+      <table class="rp-tbl"><thead><tr><th style="width:26px">No</th><th>圃場名</th><th>地番</th><th>面積(a)</th><th>今年の品種</th>${optOwner?'<th>地主</th>':''}<th>収穫(俵)</th><th>反収(俵/反)</th><th style="width:22%">${nextY}年 品種・作付け</th><th style="width:16%">備考</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </section>`;
+  });
+
+  const root=document.createElement('div');
+  root.id='print-root'; root.innerHTML=html;
+  document.body.appendChild(root);
+  document.body.classList.add('printing');
+  root.scrollTop=0;
+
+  if(optMap){
+    setTimeout(()=>{
+      names.forEach((n,gi)=>{
+        const el=document.getElementById('rp-map-'+gi); if(!el) return;
+        const g=groups[n].slice().sort((a,b)=>(a.name||'')<(b.name||'')?-1:1);
+        const m=L.map(el,{zoomControl:false,attributionControl:true,zoomSnap:0.25,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,keyboard:false,touchZoom:false});
+        _rpMaps.push(m);
+        const url=mapType==='std'?'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png':'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg';
+        L.tileLayer(url,{maxZoom:18,attribution:'国土地理院'}).addTo(m);
+        const pts=[];
+        g.forEach((f,i)=>{
+          if(!f.latlngs||f.latlngs.length<3) return;
+          const ll=f.latlngs.map(p=>[p.lat,p.lng]); pts.push(...ll);
+          const c=getFieldColor(f);
+          const poly=L.polygon(ll,{color:'#fff',weight:2,fillColor:c.f,fillOpacity:.45}).addTo(m);
+          const ctr=poly.getBounds().getCenter();
+          L.marker(ctr,{icon:L.divIcon({className:'',html:`<div class="rp-no">${i+1}</div>`,iconSize:[20,20],iconAnchor:[10,10]}),interactive:false}).addTo(m);
+        });
+        if(pts.length) m.fitBounds(L.latLngBounds(pts),{padding:[20,20],maxZoom:17});
+        else m.setView([35.3,140.1],14);
+        setTimeout(()=>m.invalidateSize(),50);
+      });
+    },100);
+  }
+}
+
 function remindBackup(){
   try{
     const last=parseInt(localStorage.getItem('lastBackupAt')||'0');
