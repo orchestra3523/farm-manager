@@ -185,6 +185,11 @@ textarea{resize:vertical;min-height:56px}
 /* TOAST */
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--gd);color:var(--cr);padding:8px 16px;border-radius:8px;font-size:12px;z-index:9999;opacity:0;transition:opacity .22s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
+.st-wrap{overflow:auto;padding:0 14px}
+.st-tbl{border-collapse:collapse;width:100%;font-size:12px}
+.st-tbl th,.st-tbl td{border-bottom:1px solid #EAE4D8;padding:6px 8px;text-align:left}
+.st-tbl th{background:#F4F1EA;font-weight:600;position:sticky;top:0}
+.st-tbl td.r{text-align:right}
 /* 印刷レポート */
 #print-root{position:fixed;inset:0;background:#e9e6df;z-index:12000;overflow:auto;color:#1E2E28;font-family:'Noto Sans JP',sans-serif}
 .rp-bar{position:sticky;top:0;background:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #EAE4D8;z-index:2}
@@ -205,6 +210,11 @@ textarea{resize:vertical;min-height:56px}
 .rp-tbl td.r{text-align:right}.rp-tbl td.c{text-align:center}.rp-tbl td.wr{height:22px}
 .rp-tbl thead{display:table-header-group}.rp-tbl tr{page-break-inside:avoid}
 .rp-note{font-size:10.5px;color:#5A7068;margin-top:8px}
+.nl-g{margin-bottom:12px;page-break-inside:avoid}
+.nl-g h2{font-size:14px;border-bottom:2px solid #2C4A3E;padding-bottom:2px;margin-bottom:4px}
+.nl-ol{columns:3;column-gap:18px;margin:0;padding-left:26px;font-size:12px;line-height:1.7}
+.nl-ol li{break-inside:avoid}
+.nl-a{color:#5A7068;font-size:10.5px;margin-left:6px}
 @media print{
   @page{size:A4 landscape;margin:8mm}
   html,body{height:auto!important;overflow:visible!important;display:block!important;background:#fff!important}
@@ -312,6 +322,7 @@ textarea{resize:vertical;min-height:56px}
 <div class="tabs">
   <div class="tab on" id="tab-map" onclick="switchView('map')">🗺️ 地図</div>
   <div class="tab" id="tab-list" onclick="switchView('list')">📋 一覧表</div>
+  <div class="tab" id="tab-stock" onclick="switchView('stock')">📦 資材・在庫</div>
 </div>
 
 <!-- MAP VIEW -->
@@ -340,6 +351,10 @@ textarea{resize:vertical;min-height:56px}
 </div>
 
 <!-- LIST VIEW -->
+<div class="list-view" id="stock-view">
+  <div id="stock-content" style="flex:1;overflow:auto;background:#fff"></div>
+</div>
+
 <div class="list-view" id="list-view">
   <div class="ltbar">
     <input type="text" id="lsrch" style="max-width:200px;padding:5px 9px 5px 26px;background:var(--cr) url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%235A7068%27 stroke-width=%272%27%3E%3Ccircle cx=%2711%27 cy=%2711%27 r=%278%27/%3E%3Cline x1=%2721%27 y1=%2721%27 x2=%2716.65%27 y2=%2716.65%27/%3E%3C/svg%3E') no-repeat 7px center;border:1px solid var(--cd);border-radius:6px;font-size:12px;font-family:inherit;outline:none" placeholder="検索…" oninput="rerender()">
@@ -2153,10 +2168,13 @@ function updateStats(){
 // ============================================================
 function switchView(v){
   document.getElementById('map-wrap').classList.toggle('hide',v!=='map');
-  document.getElementById('list-view').classList.toggle('on',v!=='map');
+  document.getElementById('list-view').classList.toggle('on',v==='list');
+  document.getElementById('stock-view').classList.toggle('on',v==='stock');
   document.getElementById('tab-map').classList.toggle('on',v==='map');
-  document.getElementById('tab-list').classList.toggle('on',v!=='map');
+  document.getElementById('tab-list').classList.toggle('on',v==='list');
+  document.getElementById('tab-stock').classList.toggle('on',v==='stock');
   if(v==='map')setTimeout(()=>map.invalidateSize(),50);
+  else if(v==='stock')loadStock();
   else renderTable();
 }
 // ============================================================
@@ -2488,9 +2506,42 @@ function openReportDialog(){
     <label style="display:flex;gap:8px;padding:3px 0"><input type="checkbox" id="rp-opt-owner"> 地主名を表に入れる</label>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="btn btn-outline" onclick="document.getElementById('rp-dialog').remove()">キャンセル</button>
+      <button class="btn btn-outline" onclick="buildNameList()" title="圃場名だけを地区ごとに並べて印刷">📄 圃場名だけの一覧</button>
       <button class="btn btn-green" onclick="buildReport()">プレビューを開く</button>
     </div></div>`;
   document.body.appendChild(d);
+}
+
+
+// 圃場名だけの一覧（地区ごと・3列）
+function buildNameList(){
+  const sel=Array.from(document.querySelectorAll('.rp-chk:checked')).map(c=>c.value);
+  if(!sel.length){ showToast('地区を1つ以上選んでください'); return; }
+  const withLot=confirm('地番も付けますか？\n［OK］付ける（表の形で印刷）　［キャンセル］付けない');
+  const withArea=confirm('面積(a)も付けますか？\n［OK］付ける　［キャンセル］付けない');
+  document.getElementById('rp-dialog').remove();
+  const groups={};
+  fields.forEach(f=>{const a=getAreaName(f);(groups[a]=groups[a]||[]).push(f);});
+  const names=Object.keys(groups).filter(n=>sel.indexOf(n)>=0).sort();
+  const t=new Date(), ds=t.getFullYear()+'年'+(t.getMonth()+1)+'月'+t.getDate()+'日';
+  let total=0;
+  let html=`<div class="rp-bar no-print"><button class="btn btn-green" onclick="window.print()">🖨 印刷する</button>
+    <button class="btn btn-outline" onclick="closeReport()">✕ 閉じる</button>
+    <span style="font-size:12px;color:#5A7068">※ 印刷の画面で「用紙: A4」にしてください。</span></div>
+    <section class="rp-page"><h1>圃場名一覧</h1><div class="rp-sub">作成日 ${ds}</div>`;
+  names.forEach(n=>{
+    const g=groups[n].slice().sort((a,b)=>(a.name||'')<(b.name||'')?-1:1); total+=g.length;
+    if(withLot){
+      html+=`<div class="nl-g"><h2>📍 ${_esc(n)}（${g.length}筆）</h2><table class="rp-tbl"><thead><tr><th style="width:30px">No</th><th>圃場名</th><th>地番</th>${withArea?'<th style="width:70px">面積(a)</th>':''}</tr></thead><tbody>`+
+        g.map((f,i)=>{const a=fieldAreaA(f);return `<tr><td class="c">${i+1}</td><td>${_esc(f.name)}</td><td>${_esc(f.lot)}</td>${withArea?`<td class="r">${isNaN(a)?'':a.toFixed(2)}</td>`:''}</tr>`}).join('')+`</tbody></table></div>`;
+    }else{
+    html+=`<div class="nl-g"><h2>📍 ${_esc(n)}（${g.length}筆）</h2><ol class="nl-ol">`+
+      g.map(f=>{const a=fieldAreaA(f);return `<li>${_esc(f.name)}${withArea&&!isNaN(a)?`<span class="nl-a">${a.toFixed(2)}a</span>`:''}</li>`}).join('')+`</ol></div>`;
+    }
+  });
+  html+=`<div class="rp-note">合計 ${total}筆</div></section>`;
+  const root=document.createElement('div'); root.id='print-root'; root.innerHTML=html;
+  document.body.appendChild(root); document.body.classList.add('printing'); root.scrollTop=0;
 }
 
 function closeReport(){
@@ -2593,6 +2644,243 @@ function buildReport(){
       });
     },100);
   }
+}
+
+
+// ============================================================
+//  資材・在庫 / 使用記録
+// ============================================================
+let materials=[], stockLog=[], usageLog=[], stockLoaded=false;
+const MAT_KINDS=['肥料','除草剤','殺虫・殺菌剤','種子・育苗資材','その他'];
+const USE_METHODS=['動力散布機','ブームスプレーヤー','ドローン','背負い式','手まき','田植機(同時施肥)','その他'];
+
+function _half(s){return String(s||'').replace(/[０-９．]/g,c=>c==='．'?'.':String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[,，\s]/g,'');}
+function _num(s){const n=parseFloat(_half(s));return isNaN(n)?NaN:n;}
+function _today(){const d=new Date(),z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());}
+function _r2(x){return Math.round(x*100)/100;}
+
+async function loadStock(){
+  const box=document.getElementById('stock-content');
+  try{
+    const [m,s,u]=await Promise.all([
+      supaFetch('materials?select=*&order=kind.asc,name.asc'),
+      supaFetch('stock_log?select=*&order=log_date.desc,id.desc'),
+      supaFetch('usage_log?select=*&order=use_date.desc,id.desc&limit=3000')
+    ]);
+    materials=m||[]; stockLog=s||[]; usageLog=u||[]; stockLoaded=true;
+    renderStock();
+  }catch(e){
+    stockLoaded=false;
+    const missing=/PGRST205|Could not find the table|does not exist|404/.test(String(e.message));
+    box.innerHTML=missing
+      ? `<div style="padding:24px;max-width:560px;line-height:1.8"><b>📦 資材・在庫を使うには、先にデータベースの準備が必要です。</b><br>作業を依頼した相手（Claude）から受け取った「資材テーブルを作るSQL」を、SupabaseのSQL Editorで1回実行してください。</div>`
+      : `<div style="padding:24px;color:#b91c1c">読み込みに失敗しました：${_esc(e.message)}</div>`;
+  }
+}
+
+function matStock(m){
+  const inn=stockLog.filter(x=>x.material_id===m.id).reduce((s,x)=>s+(parseFloat(x.qty)||0),0);
+  const used=usageLog.filter(x=>x.material_id===m.id).reduce((s,x)=>s+(parseFloat(x.qty)||0),0);
+  return _r2(inn-used);
+}
+function matById(id){return materials.find(m=>m.id===id);}
+
+function renderStock(){
+  const box=document.getElementById('stock-content'); if(!box) return;
+  const q=(document.getElementById('st-q')?.value||'').trim();
+  const fm=document.getElementById('st-m')?.value||'';
+  const showHidden=document.getElementById('st-hidden')?.checked;
+  const mats=materials.filter(m=>showHidden||m.active!==false);
+  let rowsM=mats.map(m=>{
+    const st=matStock(m), low=(m.min_stock!==null&&m.min_stock!==undefined&&st<=parseFloat(m.min_stock));
+    const last=usageLog.find(x=>x.material_id===m.id);
+    const mid=m.id;
+    return `<tr${m.active===false?' style="opacity:.5"':''}>
+      <td><b>${_esc(m.name)}</b></td><td>${_esc(m.kind||'')}</td>
+      <td class="r" style="${low?'color:#b91c1c;font-weight:700':'font-weight:700'}">${st} ${_esc(m.unit||'')}${low?' ⚠':''}</td>
+      <td class="r">${m.per_10a?_esc(m.per_10a)+' '+_esc(m.unit||'')+'/10a':''}</td>
+      <td class="r">${m.unit_price?Number(m.unit_price).toLocaleString()+'円/'+_esc(m.unit||''):''}</td>
+      <td>${last?_esc(last.use_date):''}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-outline" onclick="openStockIn(${mid})">＋入庫</button>
+        <button class="btn btn-green" onclick="openUsage(${mid})">使用記録</button>
+        <button class="btn btn-outline" onclick="openStocktake(${mid})">棚卸</button>
+        <button class="btn btn-outline" onclick="openMaterialEdit(${mid})">編集</button></td></tr>`;
+  }).join('');
+  if(!rowsM) rowsM=`<tr><td colspan="7" style="text-align:center;padding:20px;color:#5A7068">資材がまだ登録されていません。「＋資材を登録」から追加してください。</td></tr>`;
+
+  let hist=usageLog.filter(x=>(!fm||String(x.material_id)===fm)&&(!q||(x.field_name||'').indexOf(q)>=0||(x.memo||'').indexOf(q)>=0||(x.target||'').indexOf(q)>=0));
+  const total=hist.length; hist=hist.slice(0,300);
+  const rowsH=hist.map(x=>{const m=matById(x.material_id);
+    return `<tr><td>${_esc(x.use_date)}</td><td>${_esc(m?m.name:'(削除済)')}</td><td>${_esc(x.field_name||'')}</td><td class="r">${_esc(x.qty)} ${_esc(m?m.unit:'')}</td><td>${_esc(x.method||'')}</td><td>${_esc(x.target||'')}</td><td>${_esc(x.worker||'')}</td><td>${_esc(x.memo||'')}</td>
+    <td><button class="btn btn-danger" onclick="deleteUsage(${x.id})">削除</button></td></tr>`}).join('');
+
+  box.innerHTML=`
+  <div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-green" onclick="openMaterialEdit()">＋資材を登録</button>
+    <button class="btn btn-green" onclick="openUsage()">📝 使用記録をつける</button>
+    <button class="btn btn-outline" onclick="exportUsageCSV()">📥 使用記録CSV</button>
+    <label style="font-size:11px;color:#5A7068"><input type="checkbox" id="st-hidden" ${showHidden?'checked':''} onchange="renderStock()"> 非表示の資材も出す</label>
+  </div>
+  <div style="padding:0 14px 6px;font-weight:700">📦 在庫（入庫の合計 − 使用の合計）</div>
+  <div class="st-wrap"><table class="st-tbl"><thead><tr><th>資材</th><th>種類</th><th>在庫</th><th>標準量</th><th>単価</th><th>最終使用日</th><th></th></tr></thead><tbody>${rowsM}</tbody></table></div>
+  <div style="padding:14px 14px 6px;font-weight:700;display:flex;gap:8px;flex-wrap:wrap;align-items:center">📖 使用履歴
+    <select id="st-m" onchange="renderStock()" style="font-size:12px"><option value="">すべての資材</option>${materials.map(m=>`<option value="${m.id}" ${String(m.id)===fm?'selected':''}>${_esc(m.name)}</option>`).join('')}</select>
+    <input id="st-q" value="${_esc(q)}" placeholder="圃場名・対象・メモで検索" style="font-size:12px;padding:4px 8px;border:1px solid #EAE4D8;border-radius:6px" onchange="renderStock()">
+    <span style="font-size:11px;font-weight:400;color:#5A7068">${total}件${total>300?'（新しい300件を表示）':''}</span></div>
+  <div class="st-wrap"><table class="st-tbl"><thead><tr><th>使用日</th><th>資材</th><th>圃場</th><th>使用量</th><th>方法</th><th>対象</th><th>担当</th><th>メモ</th><th></th></tr></thead>
+  <tbody>${rowsH||'<tr><td colspan="9" style="text-align:center;padding:16px;color:#5A7068">使用記録はまだありません</td></tr>'}</tbody></table></div>`;
+}
+
+// ---- 共通ダイアログ ----
+function stkModal(title,bodyHtml,okLabel,onOk){
+  const old=document.getElementById('stk-modal'); if(old) old.remove();
+  const d=document.createElement('div'); d.id='stk-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:15000;display:flex;align-items:center;justify-content:center;padding:12px';
+  d.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:16px;font-size:13px;color:#1E2E28">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">${title}</div>
+    <div id="stk-body">${bodyHtml}</div>
+    <div id="stk-err" style="color:#b91c1c;font-size:12px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-outline" onclick="document.getElementById('stk-modal').remove()">キャンセル</button>
+      <button class="btn btn-green" id="stk-ok">${okLabel}</button></div></div>`;
+  document.body.appendChild(d);
+  document.getElementById('stk-ok').onclick=async()=>{
+    const b=document.getElementById('stk-ok'); b.disabled=true;
+    try{ const r=await onOk(); if(r===false){b.disabled=false;return;} document.getElementById('stk-modal').remove(); await loadStock(); showToast('✓ 保存しました'); }
+    catch(e){ b.disabled=false; document.getElementById('stk-err').textContent='保存できませんでした：'+e.message; showToast('⚠ 保存失敗: '+e.message); }
+  };
+}
+function _row(label,html){return `<div style="margin:7px 0"><div style="font-size:11px;color:#5A7068;margin-bottom:2px">${label}</div>${html}</div>`;}
+const _inp='style="width:100%;padding:7px 9px;border:1px solid #EAE4D8;border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box"';
+function _matSelect(id,selId){return `<select id="${id}" ${_inp}>${materials.filter(m=>m.active!==false).map(m=>`<option value="${m.id}" ${m.id===selId?'selected':''}>${_esc(m.name)}（${_esc(m.unit||'')}）</option>`).join('')}</select>`;}
+function _err(m){document.getElementById('stk-err').textContent=m; return false;}
+
+// ---- 資材の登録・編集 ----
+function openMaterialEdit(id){
+  const m=id?matById(id):{};
+  stkModal(id?'資材を編集':'資材を登録',
+    _row('資材名（例：〇〇一発剤 20kg）',`<input id="mt-name" value="${_esc(m.name||'')}" ${_inp}>`)+
+    _row('種類',`<select id="mt-kind" ${_inp}>${MAT_KINDS.map(k=>`<option ${m.kind===k?'selected':''}>${k}</option>`).join('')}</select>`)+
+    _row('数える単位（袋・本・kg・L など。在庫と使用量はこの単位で入れます）',`<input id="mt-unit" value="${_esc(m.unit||'')}" placeholder="袋" ${_inp}>`)+
+    _row('単価（円／1単位）　※任意',`<input id="mt-price" value="${_esc(m.unit_price||'')}" inputmode="decimal" ${_inp}>`)+
+    _row('標準の使用量（10aあたり、同じ単位）　※任意',`<input id="mt-per" value="${_esc(m.per_10a||'')}" inputmode="decimal" ${_inp}>`)+
+    _row('在庫がこの数以下になったら赤く表示　※任意',`<input id="mt-min" value="${_esc(m.min_stock===null||m.min_stock===undefined?'':m.min_stock)}" inputmode="decimal" ${_inp}>`)+
+    _row('メモ（購入先・成分・使用基準など）',`<textarea id="mt-memo" rows="3" ${_inp}>${_esc(m.memo||'')}</textarea>`)+
+    (id?`<label style="display:flex;gap:6px;margin-top:6px"><input type="checkbox" id="mt-active" ${m.active===false?'':'checked'}> 使っている資材として表示する</label>`:''),
+    '保存',
+    async()=>{
+      const name=document.getElementById('mt-name').value.trim(); if(!name) return _err('資材名を入れてください');
+      const n=x=>{const v=_num(document.getElementById(x).value);return isNaN(v)?null:v;};
+      const row={name,kind:document.getElementById('mt-kind').value,unit:document.getElementById('mt-unit').value.trim()||null,
+        unit_price:n('mt-price'),per_10a:n('mt-per'),min_stock:n('mt-min'),memo:document.getElementById('mt-memo').value.trim()||null};
+      if(id){ row.active=document.getElementById('mt-active').checked; await supaFetch('materials?id=eq.'+id,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify(row)}); }
+      else { row.active=true; await supaFetch('materials',{method:'POST',prefer:'return=minimal',body:JSON.stringify(row)}); }
+    });
+}
+
+// ---- 入庫 ----
+function openStockIn(id){
+  if(!materials.length){showToast('先に資材を登録してください');return;}
+  stkModal('＋入庫（納品・購入）',
+    _row('資材',_matSelect('si-mat',id))+_row('入庫した日',`<input type="date" id="si-date" value="${_today()}" ${_inp}>`)+
+    _row('入庫した量',`<input id="si-qty" inputmode="decimal" ${_inp}>`)+_row('メモ（購入先・ロット番号など）',`<input id="si-memo" ${_inp}>`),
+    '入庫を保存',
+    async()=>{
+      const q=_num(document.getElementById('si-qty').value); if(isNaN(q)||q<=0) return _err('量を数字で入れてください');
+      await supaFetch('stock_log',{method:'POST',prefer:'return=minimal',body:JSON.stringify({material_id:parseInt(document.getElementById('si-mat').value),log_date:document.getElementById('si-date').value,qty:q,kind:'入庫',memo:document.getElementById('si-memo').value.trim()||null})});
+    });
+}
+// ---- 棚卸（実際の在庫数に合わせる）----
+function openStocktake(id){
+  const m=matById(id); if(!m) return;
+  stkModal('棚卸：'+_esc(m.name),
+    `<div>いまの記録上の在庫：<b>${matStock(m)} ${_esc(m.unit||'')}</b></div>`+
+    _row('実際に数えた在庫',`<input id="sk-qty" inputmode="decimal" ${_inp}>`)+_row('メモ',`<input id="sk-memo" ${_inp}>`),
+    '在庫を合わせる',
+    async()=>{
+      const real=_num(document.getElementById('sk-qty').value); if(isNaN(real)||real<0) return _err('実際の在庫を数字で入れてください');
+      const diff=_r2(real-matStock(m)); if(diff===0) return _err('記録と同じなので変更はありません');
+      await supaFetch('stock_log',{method:'POST',prefer:'return=minimal',body:JSON.stringify({material_id:id,log_date:_today(),qty:diff,kind:'棚卸調整',memo:document.getElementById('sk-memo').value.trim()||'棚卸'})});
+    });
+}
+
+// ---- 使用記録 ----
+function openUsage(matId){
+  if(!materials.length){showToast('先に資材を登録してください');return;}
+  const groups={}; fields.forEach(f=>{const a=getAreaName(f);(groups[a]=groups[a]||[]).push(f);});
+  const names=Object.keys(groups).sort();
+  const fl=names.map((n,gi)=>`<div class="us-g"><label style="display:flex;gap:6px;font-weight:700;background:#F4F1EA;padding:3px 6px"><input type="checkbox" onchange="usToggleGroup(this,${gi})"> 📍${_esc(n)}（${groups[n].length}筆）</label>
+    <div class="us-items" data-g="${gi}">${groups[n].slice().sort((a,b)=>(a.name||'')<(b.name||'')?-1:1).map(f=>`<label class="us-f" style="display:flex;gap:6px;padding:2px 6px 2px 22px"><input type="checkbox" class="us-chk" value="${f.id}" onchange="usPreview()"> <span>${_esc(f.name)}</span><span style="color:#5A7068;font-size:11px">${isNaN(fieldAreaA(f))?'':fieldAreaA(f).toFixed(1)+'a'}</span></label>`).join('')}</div></div>`).join('');
+  stkModal('📝 使用記録をつける',
+    _row('資材',_matSelect('us-mat',matId).replace('<select ','<select onchange="usPreview()" '))+
+    _row('使った日',`<input type="date" id="us-date" value="${_today()}" ${_inp}>`)+
+    _row('使った圃場（地区の□でまとめて選べます）',`<input id="us-search" placeholder="圃場名で絞り込み" oninput="usFilter()" ${_inp}><div id="us-list" style="max-height:26vh;overflow:auto;border:1px solid #EAE4D8;border-radius:6px;margin-top:4px">${fl}</div><div id="us-count" style="font-size:11px;color:#5A7068;margin-top:3px">0筆 選択中（0.0a）</div>`)+
+    _row('使用量の入れ方',`<label style="display:flex;gap:6px"><input type="radio" name="us-mode" value="total" checked onchange="usPreview()"> 使った<b>合計量</b>を入れる（面積で各圃場に割り振ります）</label>
+      <label style="display:flex;gap:6px"><input type="radio" name="us-mode" value="std" onchange="usPreview()"> 資材の<b>標準量（10aあたり）</b>で自動計算する</label>`)+
+    `<div id="us-total-row">${_row('合計の使用量',`<input id="us-qty" inputmode="decimal" oninput="usPreview()" ${_inp}>`)}</div>`+
+    `<div id="us-preview" style="font-size:12px;background:#F8F5EF;border-radius:6px;padding:6px 8px;margin:6px 0;max-height:16vh;overflow:auto"></div>`+
+    _row('散布方法',`<select id="us-method" ${_inp}>${USE_METHODS.map(x=>`<option>${x}</option>`).join('')}</select>`)+
+    _row('対象（雑草・病害虫・目的）　※任意',`<input id="us-target" placeholder="例：ノビエ、いもち病、基肥" ${_inp}>`)+
+    _row('作業した人　※任意',`<input id="us-worker" ${_inp}>`)+_row('メモ（天候・希釈倍率など）',`<input id="us-memo" ${_inp}>`),
+    '使用を記録',
+    async()=>{
+      const al=usAllocate(); if(al.err) return _err(al.err);
+      const m=matById(parseInt(document.getElementById('us-mat').value));
+      const common={use_date:document.getElementById('us-date').value,material_id:m.id,method:document.getElementById('us-method').value,
+        target:document.getElementById('us-target').value.trim()||null,worker:document.getElementById('us-worker').value.trim()||null,memo:document.getElementById('us-memo').value.trim()||null};
+      const rows=al.list.map(x=>({...common,field_id:x.f.id,field_name:x.f.name,qty:x.q}));
+      await supaFetch('usage_log',{method:'POST',prefer:'return=minimal',body:JSON.stringify(rows)});
+    });
+  usPreview();
+}
+function usToggleGroup(cb,gi){document.querySelectorAll('.us-items[data-g="'+gi+'"] .us-chk').forEach(c=>{if(c.closest('.us-f').style.display!=='none') c.checked=cb.checked;});usPreview();}
+function usFilter(){const q=document.getElementById('us-search').value.trim();document.querySelectorAll('.us-f').forEach(l=>{l.style.display=(!q||l.textContent.indexOf(q)>=0)?'flex':'none';});}
+function usAllocate(){
+  const ids=Array.from(document.querySelectorAll('.us-chk:checked')).map(c=>parseInt(c.value));
+  const fs=ids.map(i=>fields.find(f=>f.id===i)).filter(Boolean);
+  if(!fs.length) return {err:'圃場を1つ以上選んでください'};
+  const m=matById(parseInt(document.getElementById('us-mat').value)); if(!m) return {err:'資材を選んでください'};
+  const mode=document.querySelector('input[name=us-mode]:checked').value;
+  const areas=fs.map(f=>{const a=fieldAreaA(f);return isNaN(a)?0:a;});
+  const sumA=areas.reduce((s,a)=>s+a,0);
+  let list=[];
+  if(mode==='std'){
+    const per=parseFloat(m.per_10a); if(!per) return {err:'この資材には「標準の使用量」が未登録です。合計量で入れるか、資材の編集で登録してください'};
+    if(!sumA) return {err:'選んだ圃場に面積が入っていません'};
+    list=fs.map((f,i)=>({f,q:_r2(per*areas[i]/10)}));
+  }else{
+    const tot=_num(document.getElementById('us-qty').value);
+    if(isNaN(tot)||tot<=0) return {err:'合計の使用量を数字で入れてください'};
+    let acc=0;
+    list=fs.map((f,i)=>{const w=sumA?areas[i]/sumA:1/fs.length; const q=(i===fs.length-1)?_r2(tot-acc):_r2(tot*w); acc=_r2(acc+q); return {f,q};});
+  }
+  return {list,m,sumA};
+}
+function usPreview(){
+  const pv=document.getElementById('us-preview'); if(!pv) return;
+  const mode=document.querySelector('input[name=us-mode]:checked').value;
+  document.getElementById('us-total-row').style.display=mode==='total'?'block':'none';
+  const chk=document.querySelectorAll('.us-chk:checked');
+  let sa=0; chk.forEach(c=>{const f=fields.find(x=>x.id===parseInt(c.value)); const a=f?fieldAreaA(f):NaN; if(!isNaN(a)) sa+=a;});
+  document.getElementById('us-count').textContent=chk.length+'筆 選択中（'+sa.toFixed(1)+'a）';
+  const al=usAllocate();
+  if(al.err){ pv.textContent=chk.length?al.err:'圃場を選ぶと、ここに各圃場の使用量が出ます'; return; }
+  const sum=_r2(al.list.reduce((s,x)=>s+x.q,0)), u=_esc(al.m.unit||''), st=matStock(al.m);
+  pv.innerHTML=`<b>合計 ${sum} ${u}</b>（いまの在庫 ${st} ${u} → 記録後 ${_r2(st-sum)} ${u}${st-sum<0?' ⚠在庫不足':''}）<br>`+al.list.slice(0,40).map(x=>`${_esc(x.f.name)}：${x.q}`).join('　／　')+(al.list.length>40?' …':'');
+}
+async function deleteUsage(id){
+  if(!confirm('この使用記録を削除しますか？（在庫は元に戻ります）')) return;
+  try{ await supaFetch('usage_log?id=eq.'+id,{method:'DELETE'}); showToast('削除しました'); await loadStock(); }
+  catch(e){ showToast('⚠ 削除失敗: '+e.message); }
+}
+function exportUsageCSV(){
+  const cols=['使用日','資材','種類','圃場','使用量','単位','散布方法','対象','担当','メモ'];
+  const esc=x=>'"'+String(x===null||x===undefined?'':x).replace(/"/g,'""')+'"';
+  const rows=usageLog.slice().sort((a,b)=>a.use_date<b.use_date?-1:1).map(x=>{const m=matById(x.material_id)||{};return [x.use_date,m.name,m.kind,x.field_name,x.qty,m.unit,x.method,x.target,x.worker,x.memo].map(esc).join(',');});
+  const csv='﻿'+[cols.map(esc).join(','),...rows].join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='資材使用記録_'+_today()+'.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
 
 function remindBackup(){
